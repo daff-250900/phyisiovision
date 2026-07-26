@@ -9,4 +9,4 @@ data/processed/*
 !data/processed/.gitkeep
 .claude/
 .pytest_cache/
-ANALYTICS.md
+ANALYSIS.md
