@@ -41,6 +41,35 @@ FASES_LEGIBLES = {
 #: Segundos que el aviso de la última repetición permanece sobre la imagen.
 DURACION_AVISO_S = 3.0
 
+#: Frames que se observan antes de fijar la tasa real de entrega. A 30 Hz es algo
+#: menos de un segundo, suficiente para promediar el jitter de la red.
+FRAMES_MEDICION = 20
+
+#: Tasa a la que se calcularon las variables del entrenamiento. Si la entrega real
+#: se aleja mucho, las variables temporales derivan y la clasificación con ellas.
+TASA_ENTRENAMIENTO = 30.0
+#: Desviación relativa a partir de la cual se avisa al usuario.
+TOLERANCIA_TASA = 0.30
+
+#: Modo del detector para la cámara. Contraintuitivamente es "video", el modo
+#: síncrono, y no "vivo".
+#:
+#: Con "vivo" la app terminaba en SIGSEGV dentro de
+#: `PoseLandmarker::DetectAsync` -> `SendLiveStreamData`, en un hilo del pool de
+#: Gradio. No se ha conseguido reproducir el fallo fuera de la app —600 frames
+#: con 8 hilos concurrentes, con y sin cerrojo, y sin caídas— así que no hay
+#: certeza sobre la causa exacta ni sobre si los cerrojos añadidos bastarían.
+#:
+#: Lo que sí se sabe: el fallo está en el camino asíncrono, y el camino síncrono
+#: `detect_for_video` lleva ~68.000 frames ejecutados en la extracción por lotes
+#: de este mismo proyecto sin un solo fallo. Además, el modo asíncrono aquí no
+#: aportaba nada: ya se devolvía el último resultado disponible, y con las
+#: llamadas serializadas por el cerrojo no había ni siquiera paralelismo real.
+#:
+#: Coste de "video": la llamada bloquea ~20-30 ms al hilo trabajador. A los 10 Hz
+#: de `stream_every` sobra margen. El descarte de frames lo hace Gradio.
+MODO_DETECCION = "video"
+
 #: Texto del aviso, en BGR y **sin acentos**: `cv2.putText` solo dibuja ASCII y
 #: sustituye por interrogantes cualquier carácter fuera de ese rango.
 AVISO_POR_CLASE = {
@@ -74,8 +103,8 @@ class SesionEnVivo:
     Args:
         paciente: identificador del paciente.
         ejercicio: clave dentro de `knowledge_base/ejercicios.json`.
-        fps: tasa de frames esperada del cliente. Determina la ventana del
-            filtro y, con ella, el retardo (~0.2 s a 30 fps).
+        fps: tasa de reserva, usada solo si la medición falla. La real se mide
+            en los primeros `FRAMES_MEDICION` frames (ver `_medir_fps`).
         lado: ``"left"``, ``"right"`` o ``None`` para detectarlo solo.
 
             Merece la pena fijarlo. Medido sobre las 13 vistas frontales de Ex1:
@@ -90,6 +119,9 @@ class SesionEnVivo:
     ejercicio: str = "elevacion_lateral_hombro"
     fps: float = 30.0
     lado_fijado: str | None = None
+    #: Modo del detector. Ver `MODO_DETECCION` para por qué el defecto es
+    #: ``"video"`` y no ``"vivo"``, que sería lo esperable con una cámara.
+    modo_deteccion: str = MODO_DETECCION
 
     _detector: PoseDetector | None = field(default=None, init=False, repr=False)
     _acumulador: AcumuladorEnVivo | None = field(default=None, init=False, repr=False)
@@ -100,13 +132,39 @@ class SesionEnVivo:
     frames_vistos: int = field(default=0, init=False)
     frames_con_pose: int = field(default=0, init=False)
     _aviso: tuple | None = field(default=None, init=False, repr=False)
+    _medicion: list = field(default_factory=list, init=False, repr=False)
+    fps_real: float | None = field(default=None, init=False)
     _cerrada: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
-        self._detector = PoseDetector(modo="vivo", dibujar=True)
-        self._acumulador = AcumuladorEnVivo(fps=self.fps, lado=self.lado_fijado)
+        self._detector = PoseDetector(modo=self.modo_deteccion, dibujar=True)
+        # El acumulador se crea cuando se conoce la tasa real de frames: ver
+        # _medir_fps(). Hasta entonces los frames se guardan en _medicion.
+        self._acumulador = None
         self._clasificador = ExerciseClassifier()
         self._feedback = FeedbackService(KnowledgeBase())
+
+    # -- medición de la tasa de frames --------------------------------------- #
+
+    def _medir_fps(self) -> float:
+        """Tasa real de entrega, medida con el reloj de pared.
+
+        No se puede dar por supuesta. El navegador manda frames al ritmo que
+        permiten la red y la carga del servidor, no al de la cámara: con
+        `stream_every=0.1` llegan unos 10 por segundo, no 30. Y `fps` no es un
+        detalle cosmético — de él dependen la ventana del filtro, la duración
+        mínima de una repetición y las variables `duracion_s`, `vel_pico` y
+        `suavidad_ldlj`, que van directas al modelo. Suponer 30 cuando llegan 10
+        multiplica por tres todas las duraciones.
+        """
+        instantes = [t for t, _ in self._medicion]
+        transcurrido = instantes[-1] - instantes[0]
+        if transcurrido <= 0:
+            return self.fps
+        medida = (len(instantes) - 1) / transcurrido
+        # Fuera de este rango la medición no es creíble (un pico de carga, o el
+        # navegador poniéndose al día tras una pausa).
+        return float(np.clip(medida, 4.0, 60.0))
 
     # -- propiedades --------------------------------------------------------- #
 
@@ -116,7 +174,26 @@ class SesionEnVivo:
 
     @property
     def lado(self) -> str | None:
-        return self._acumulador.lado if self._acumulador else None
+        if self._acumulador is not None:
+            return self._acumulador.lado
+        return self.lado_fijado
+
+    @property
+    def midiendo_fps(self) -> bool:
+        return self._acumulador is None
+
+    @property
+    def aviso_tasa(self) -> str | None:
+        """Mensaje si la tasa real se aleja de aquella con la que se entrenó."""
+        if self.fps_real is None:
+            return None
+        desvio = abs(self.fps_real - TASA_ENTRENAMIENTO) / TASA_ENTRENAMIENTO
+        if desvio <= TOLERANCIA_TASA:
+            return None
+        return (f"La cámara entrega {self.fps_real:.0f} fps y el modelo se "
+                f"entrenó a {TASA_ENTRENAMIENTO:.0f}. Las variables de velocidad "
+                f"y suavidad se desplazan, así que la clasificación pierde "
+                f"fiabilidad. Cierra otras pestañas o baja la resolución.")
 
     # -- procesamiento ------------------------------------------------------- #
 
@@ -145,15 +222,47 @@ class SesionEnVivo:
             return anotado, self._metricas_sin_pose(), None
 
         self.frames_con_pose += 1
-        metricas, variables = self._acumulador.update(pose.fila())
 
-        resultado = self._clasificar(variables) if variables else None
+        if self._acumulador is None:
+            resultado = self._acumular_medicion(pose.fila())
+            metricas = self._metricas_midiendo()
+        else:
+            metricas, variables = self._acumulador.update(pose.fila())
+            resultado = self._clasificar(variables) if variables else None
         if resultado is not None:
             self._aviso = (resultado, time.monotonic())
 
         anotado = cv2.cvtColor(self._superponer_aviso(pose.annotated_frame),
                                cv2.COLOR_BGR2RGB)
         return anotado, metricas, resultado
+
+    def _acumular_medicion(self, fila: dict) -> ResultadoRepeticion | None:
+        """Guarda frames hasta poder medir la tasa; entonces arranca el pipeline.
+
+        Los frames de la medición no se tiran: se reprocesan con la tasa ya
+        conocida, así que no cuesta ninguna repetición.
+        """
+        self._medicion.append((time.monotonic(), fila))
+        if len(self._medicion) < FRAMES_MEDICION:
+            return None
+
+        self.fps_real = self._medir_fps()
+        self._acumulador = AcumuladorEnVivo(fps=self.fps_real,
+                                            lado=self.lado_fijado)
+        ultimo = None
+        for _, fila_previa in self._medicion:
+            _, variables = self._acumulador.update(fila_previa)
+            if variables:
+                ultimo = self._clasificar(variables)
+        self._medicion.clear()
+        return ultimo
+
+    def _metricas_midiendo(self) -> MetricasInstantaneas:
+        return MetricasInstantaneas(
+            abduccion=float("nan"), inclinacion_tronco=float("nan"),
+            fase="calibrando", repeticiones=len(self.repeticiones),
+            lado=self.lado_fijado, calibrando=True,
+        )
 
     def _superponer_aviso(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Dibuja el resultado de la última repetición sobre la imagen.
@@ -255,6 +364,7 @@ class SesionEnVivo:
             "lado": self.lado,
             "frames": self.frames_vistos,
             "cobertura_pose": self._cobertura(),
+            "fps_real": round(self.fps_real, 1) if self.fps_real else None,
             "fuente": self.repeticiones[-1].source,
         }
 

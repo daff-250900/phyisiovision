@@ -16,10 +16,18 @@ from ui.callbacks import (
 
 CSS_PATH = Path(__file__).resolve().parent / "styles.css"
 
-#: Cada frame enviado al servidor ocupa una inferencia de MediaPipe. A 10 Hz hay
-#: margen de sobra para el segmentador —que además trabaja con 0.2 s de retardo
-#: por el filtro— y se deja CPU libre para otras sesiones.
-INTERVALO_STREAM = 0.1
+#: Intervalo entre frames enviados al servidor. Se fija para igualar la tasa a la
+#: que se entrenó el modelo, no por comodidad: `suavidad_ldlj` es una derivada
+#: tercera y se desplaza con la tasa de muestreo. Medido sobre PM_000, mismos
+#: landmarks submuestreados:
+#:
+#:     30 Hz -> ldlj -13.9, vel_pico 114.5, clases [comp, corr, corr, comp]
+#:     10 Hz -> ldlj -11.5, vel_pico 107.6, clases [corr, corr, corr, comp]
+#:      5 Hz -> ldlj  -9.1, vel_pico  94.1, clases [corr, corr, corr, corr]
+#:
+#: A 10 Hz una repetición de cuatro ya cambia de clase. `rom_max` en cambio
+#: aguanta (138.4 -> 137.7), así que la deriva viene de las variables temporales.
+INTERVALO_STREAM = 1.0 / 30
 
 
 def create_app() -> gr.Blocks:

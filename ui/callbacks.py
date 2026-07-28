@@ -135,6 +135,8 @@ def _panel_metricas(metricas, sesion: SesionEnVivo) -> str:
     def grados(valor: float) -> str:
         return "—" if valor is None or np.isnan(valor) else f"{valor:.0f}°"
 
+    aviso = sesion.aviso_tasa
+    cabecera = f"> ⚠️ {aviso}\n\n" if aviso else ""
     fase = FASES_LEGIBLES.get(metricas.fase, metricas.fase)
     lado = {"left": "izquierdo", "right": "derecho"}.get(metricas.lado or "", "—")
     ultimo = sesion.repeticiones[-1] if sesion.repeticiones else None
@@ -142,6 +144,7 @@ def _panel_metricas(metricas, sesion: SesionEnVivo) -> str:
                     f"({ultimo.confidence:.0%})" if ultimo else "")
 
     return (
+        f"{cabecera}"
         f"### Repeticiones: {metricas.repeticiones}\n\n"
         f"| | |\n|---|---|\n"
         f"| Hombro | **{grados(metricas.abduccion)}** |\n"

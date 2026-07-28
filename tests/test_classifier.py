@@ -105,3 +105,29 @@ def test_variables_ausentes_se_imputan_con_la_mediana() -> None:
     parcial = clasificador.predict({})
     assert completo["label"] == parcial["label"]
     assert completo["confidence"] == pytest.approx(parcial["confidence"])
+
+
+# --------------------------------------------------------------------------- #
+# El extractor de landmarks también forma parte del contrato
+# --------------------------------------------------------------------------- #
+
+@necesita_modelo
+def test_la_variante_de_mediapipe_coincide_con_la_del_entrenamiento() -> None:
+    """La app debe extraer landmarks con el mismo modelo que vio el entrenamiento.
+
+    No es un detalle de rendimiento. Medido sobre PM_000, mismo video y mismo
+    reescalado, contra el CSV que generó el entrenamiento:
+
+        heavy -> diferencia media 0.00 grados
+        full  -> diferencia media 13.05 grados, abducción máxima 168 vs 147
+
+    Con `full`, las cuatro repeticiones de PM_000 se clasificaban como
+    compensacion_tronco; con `heavy`, igual que en el entrenamiento.
+    """
+    contrato = json.loads(settings.feature_contract_path.read_text(encoding="utf-8"))
+    usado_al_entrenar = contrato["preprocesamiento"]["modelo_mediapipe"]
+    assert settings.mediapipe_variant in usado_al_entrenar, (
+        f"la app usa '{settings.mediapipe_variant}' y el modelo se entrenó con "
+        f"'{usado_al_entrenar}'. Cambiar de variante exige reextraer los "
+        f"landmarks y reentrenar."
+    )

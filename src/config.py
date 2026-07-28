@@ -18,9 +18,19 @@ class Settings:
 
     # --- MediaPipe Pose (API Tasks) ---
     mediapipe_dir: Path = BASE_DIR / "models" / "mediapipe"
-    #: Variante de pesos para la app. "heavy" es más preciso pero no sostiene
-    #: 30 fps en el CPU compartido de un Space; el notebook sí lo usa.
-    mediapipe_variant: str = os.environ.get("PHYSIOVISION_MEDIAPIPE", "full")
+    #: Variante de pesos. **Tiene que ser la misma con la que se entrenó.**
+    #:
+    #: El contrato del modelo no es solo la lista de variables: incluye el
+    #: extractor de landmarks. Medido sobre PM_000, mismo video y mismo
+    #: reescalado, comparando contra el CSV que generó el entrenamiento:
+    #:
+    #:     heavy -> diferencia media 0.00 grados (reproduce el CSV exactamente)
+    #:     full  -> diferencia media 13.05 grados, abduccion maxima 168 vs 147
+    #:
+    #: Con `full` las cuatro repeticiones de PM_000 se clasificaban como
+    #: compensacion_tronco; con `heavy`, como en el entrenamiento. Cambiar de
+    #: variante exige reextraer los landmarks y reentrenar.
+    mediapipe_variant: str = os.environ.get("PHYSIOVISION_MEDIAPIPE", "heavy")
 
 
 settings = Settings()

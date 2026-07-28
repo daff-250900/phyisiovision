@@ -149,8 +149,23 @@ class PoseDetector:
         self._ultimo_ts = -1
         self._t0 = time.monotonic()
 
-        # Solo se usa en modo vivo: el callback llega desde otro hilo.
-        self._lock = threading.Lock()
+        # Dos cerrojos distintos, y tienen que serlo:
+        #
+        # _lock_resultado protege el resultado que deja el callback, que se
+        # ejecuta en un hilo de MediaPipe.
+        #
+        # _lock_inferencia serializa las llamadas al landmarker. Las tareas de
+        # MediaPipe NO son seguras entre hilos, y Gradio invoca los callbacks de
+        # streaming desde un pool: dos hilos entrando a la vez en detect_async
+        # provocan un SIGSEGV dentro de SendLiveStreamData. Además la marca
+        # temporal se calcula bajo este mismo cerrojo, porque si dos hilos la
+        # leen y la escriben a la vez pueden entregarse desordenadas, y el modo
+        # LIVE_STREAM exige que sean estrictamente crecientes.
+        #
+        # Usar uno solo para las dos cosas se bloquearía a sí mismo si MediaPipe
+        # invocase el callback de forma síncrona dentro de detect_async.
+        self._lock_resultado = threading.Lock()
+        self._lock_inferencia = threading.Lock()
         self._ultimo_resultado: tuple | None = None
 
         opciones = mp_vision.PoseLandmarkerOptions(
@@ -176,15 +191,18 @@ class PoseDetector:
         self.close()
 
     def close(self) -> None:
-        if not self._cerrado:
-            self._landmarker.close()
-            self._cerrado = True
+        # Bajo el cerrojo de inferencia: cerrar el landmarker mientras otro hilo
+        # está dentro de detect_async libera memoria que ese hilo sigue usando.
+        with self._lock_inferencia:
+            if not self._cerrado:
+                self._cerrado = True
+                self._landmarker.close()
 
     # -- inferencia ---------------------------------------------------------- #
 
     def _callback(self, resultado, imagen, timestamp_ms: int) -> None:
         """Recibe el resultado asíncrono. Se ejecuta en un hilo de MediaPipe."""
-        with self._lock:
+        with self._lock_resultado:
             self._ultimo_resultado = (resultado, timestamp_ms)
 
     def _timestamp(self, timestamp_ms: int | None) -> int:
@@ -225,14 +243,20 @@ class PoseDetector:
             raise RuntimeError("El detector ya fue cerrado.")
 
         imagen = self._preparar(frame)
-        ts = self._timestamp(timestamp_ms)
 
-        if self.modo == "video":
-            return self._a_resultado(
-                self._landmarker.detect_for_video(imagen, ts), frame, ts)
+        # La marca temporal y la llamada al landmarker van juntas bajo el mismo
+        # cerrojo: separarlas permitiría que dos hilos entregasen marcas
+        # desordenadas, y eso es un SIGSEGV en el modo LIVE_STREAM.
+        with self._lock_inferencia:
+            ts = self._timestamp(timestamp_ms)
+            if self._cerrado:                    # cerrado mientras esperábamos
+                return PoseResult({}, frame, False, {}, ts)
+            if self.modo == "video":
+                crudo = self._landmarker.detect_for_video(imagen, ts)
+                return self._a_resultado(crudo, frame, ts)
+            self._landmarker.detect_async(imagen, ts)
 
-        self._landmarker.detect_async(imagen, ts)
-        with self._lock:
+        with self._lock_resultado:
             ultimo = self._ultimo_resultado
         if ultimo is None:
             return PoseResult({}, frame, False, {}, ts)
