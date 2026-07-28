@@ -10,3 +10,4 @@ data/processed/*
 .claude/
 .pytest_cache/
 ANALISIS.md
+PLAN.md
