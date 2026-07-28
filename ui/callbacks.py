@@ -59,6 +59,9 @@ def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
     if not nueva.usa_modelo:
         aviso += ("\n\n⚠️ No hay modelo entrenado disponible: la clasificación "
                   "usa reglas biomecánicas, no el clasificador.")
+    if not nueva.usa_gemini:
+        aviso += (f"\n\n<sub>Mensajes sin redacción de Gemini: "
+                  f"{nueva.motivo_sin_gemini}.</sub>")
     return (nueva, aviso, _panel_vacio(),
             pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"]),
             None, "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en "
@@ -81,8 +84,11 @@ def terminar_serie(sesion: SesionEnVivo | None):
     except Exception as exc:                      # no perder la sesión por la BD
         gr.Warning(f"No se pudo guardar en el historial: {exc}")
 
+    texto_ia = sesion.redactar_resumen(
+        knowledge_base.retrieve(str(resumen["ejercicio"]),
+                                str(resumen["clasificacion"]))["recomendacion"])
     sesion.cerrar()
-    return None, _markdown_resumen(resumen), _panel_vacio(), ""
+    return None, _markdown_resumen(resumen, texto_ia), _panel_vacio(), ""
 
 
 def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
@@ -107,6 +113,12 @@ def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
 
     panel = _panel_metricas(metricas, sesion)
     if resultado is None:
+        # La redacción de Gemini llega unos segundos después de la repetición.
+        # Este es el punto donde ese resultado asíncrono entra en pantalla.
+        mejorado = sesion.hay_texto_nuevo()
+        if mejorado is not None:
+            return (anotado, panel, gr.skip(), gr.skip(),
+                    _feedback_repeticion(mejorado), sesion)
         return anotado, panel, gr.skip(), gr.skip(), gr.skip(), sesion
 
     return (anotado, panel, resultado.probabilities,
@@ -180,7 +192,10 @@ def _feedback_repeticion(resultado) -> str:
         f"### {icono} Repetición {resultado.indice} — {conocimiento['title']}\n\n"
         f"**{resultado.label}** · confianza {resultado.confidence:.0%}  \n"
         f"<sub>{detalle}</sub>\n\n"
-        f"{conocimiento['message']}\n\n"
+        # resultado.mensaje devuelve el texto de Gemini si ya llegó, y si no el
+        # del JSON. La advertencia de seguridad va siempre literal del JSON:
+        # es lo único que no se reformula.
+        f"{resultado.mensaje}\n\n"
         f"> **Precaución:** {conocimiento['safety_warning']}"
         f"{aviso_reglas}"
     )
@@ -194,7 +209,7 @@ def _tabla_repeticiones(sesion: SesionEnVivo) -> pd.DataFrame:
     ])
 
 
-def _markdown_resumen(resumen: dict[str, Any]) -> str:
+def _markdown_resumen(resumen: dict[str, Any], texto_ia: str | None = None) -> str:
     conocimiento = knowledge_base.retrieve(
         str(resumen["ejercicio"]), str(resumen["clasificacion"]))
     correctas, total = resumen["correctas"], resumen["repeticiones"]
@@ -207,7 +222,7 @@ def _markdown_resumen(resumen: dict[str, Any]) -> str:
         f"## {conocimiento.get('titulo', 'Resultado')}\n\n"
         f"**{correctas} de {total} repeticiones correctas.** "
         f"ROM máximo {resumen['rom_max']:.0f}°, medio {resumen['rom_medio']:.0f}°.\n\n"
-        f"{conocimiento['recomendacion']}\n\n"
+        f"{texto_ia or conocimiento['recomendacion']}\n\n"
         f"> **Precaución:** {conocimiento['precaucion']}"
         f"{aviso_fuente}{aviso_cobertura}"
     )

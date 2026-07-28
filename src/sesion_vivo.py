@@ -18,7 +18,9 @@ B. Clasificación  al cerrar repetición    XGBoost sobre las 26 variables
 
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +29,7 @@ import numpy as np
 
 from src.classifier import ExerciseClassifier
 from src.feedback import FeedbackService
+from src.gemini_feedback import RedactorGemini
 from src.pose_detector import PoseDetector
 from src.rag import KnowledgeBase
 from src.segmentador_online import AcumuladorEnVivo, MetricasInstantaneas
@@ -90,10 +93,19 @@ class ResultadoRepeticion:
     source: str
     variables: dict[str, float]
     feedback: dict[str, Any]
+    #: Reformulación de Gemini. Llega despues que el resto, por eso es opcional:
+    #: el mensaje base del JSON se muestra de inmediato y este lo sustituye
+    #: cuando esta listo. Si Gemini no responde, se queda en None y no pasa nada.
+    mensaje_ia: str | None = None
 
     @property
     def es_correcta(self) -> bool:
         return self.label == "correcto"
+
+    @property
+    def mensaje(self) -> str:
+        """Texto a mostrar: el de Gemini si llego, si no el del JSON."""
+        return self.mensaje_ia or self.feedback["message"]
 
 
 @dataclass
@@ -134,6 +146,11 @@ class SesionEnVivo:
     _aviso: tuple | None = field(default=None, init=False, repr=False)
     _medicion: list = field(default_factory=list, init=False, repr=False)
     fps_real: float | None = field(default=None, init=False)
+    _redactor: RedactorGemini | None = field(default=None, init=False, repr=False)
+    _pool: ThreadPoolExecutor | None = field(default=None, init=False, repr=False)
+    _lock_texto: Any = field(default=None, init=False, repr=False)
+    _version_texto: int = field(default=0, init=False)
+    _version_emitida: int = field(default=0, init=False)
     _cerrada: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -143,6 +160,13 @@ class SesionEnVivo:
         self._acumulador = None
         self._clasificador = ExerciseClassifier()
         self._feedback = FeedbackService(KnowledgeBase())
+        self._redactor = RedactorGemini()
+        # Un solo hilo por sesion: las redacciones se encolan y no se pisan. Si
+        # una repeticion llega antes de que termine la anterior, espera su turno
+        # en vez de abrir conexiones en paralelo.
+        self._pool = ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="gemini")
+        self._lock_texto = threading.Lock()
 
     # -- medición de la tasa de frames --------------------------------------- #
 
@@ -316,7 +340,78 @@ class SesionEnVivo:
             feedback=feedback,
         )
         self.repeticiones.append(resultado)
+        self._encolar_redaccion(resultado)
         return resultado
+
+    # -- redacción con Gemini ------------------------------------------------ #
+
+    def _encolar_redaccion(self, resultado: ResultadoRepeticion) -> None:
+        """Lanza la redacción en segundo plano.
+
+        No puede hacerse en línea: una llamada a Gemini tarda 1-3 s y este
+        código corre dentro del bucle de streaming, a 30 Hz. Bloquear aquí
+        congelaría la imagen justo cuando el paciente acaba de moverse.
+
+        El mensaje del JSON se muestra de inmediato; cuando llega el de Gemini,
+        `hay_texto_nuevo()` avisa a la interfaz para que lo sustituya.
+        """
+        if self._redactor is None or not self._redactor.disponible:
+            return
+        if self._pool is None or self._cerrada:
+            return
+
+        def tarea() -> None:
+            texto = self._redactor.redactar_repeticion(
+                indice=resultado.indice,
+                etiqueta=resultado.label,
+                confianza=resultado.confidence,
+                recomendacion=resultado.feedback["message"],
+                variables=resultado.variables,
+                lado=self.lado,
+            )
+            if not texto:
+                return
+            with self._lock_texto:
+                resultado.mensaje_ia = texto
+                self._version_texto += 1
+
+        try:
+            self._pool.submit(tarea)
+        except RuntimeError:
+            pass          # el pool ya estaba cerrado: no es un error
+
+    def hay_texto_nuevo(self) -> ResultadoRepeticion | None:
+        """Devuelve la repetición cuyo texto acaba de mejorarse, o `None`.
+
+        La interfaz la consulta en cada frame: es la forma de que un resultado
+        asíncrono llegue a la pantalla sin que el usuario tenga que hacer nada.
+        """
+        if self._lock_texto is None:
+            return None
+        with self._lock_texto:
+            if self._version_texto == self._version_emitida:
+                return None
+            self._version_emitida = self._version_texto
+        return self.repeticiones[-1] if self.repeticiones else None
+
+    def redactar_resumen(self, recomendacion: str) -> str | None:
+        """Texto de cierre de la serie. Síncrono: aquí sí se puede esperar.
+
+        Lo dispara un botón, no el bucle de streaming, y el usuario acepta un
+        par de segundos por un resumen. El timeout del cliente acota la espera.
+        """
+        if self._redactor is None or not self._redactor.disponible:
+            return None
+        return self._redactor.redactar_resumen(resumen=self.resumen(),
+                                               recomendacion=recomendacion)
+
+    @property
+    def usa_gemini(self) -> bool:
+        return bool(self._redactor and self._redactor.disponible)
+
+    @property
+    def motivo_sin_gemini(self) -> str:
+        return self._redactor.motivo_no_disponible if self._redactor else ""
 
     def _metricas_sin_pose(self) -> MetricasInstantaneas:
         return MetricasInstantaneas(
@@ -374,10 +469,17 @@ class SesionEnVivo:
     # -- ciclo de vida ------------------------------------------------------- #
 
     def cerrar(self) -> None:
-        """Libera el `PoseLandmarker`. Llamar siempre al terminar la sesión."""
-        if not self._cerrada and self._detector is not None:
+        """Libera el `PoseLandmarker` y el hilo de redacción."""
+        if self._cerrada:
+            return
+        self._cerrada = True
+        if self._pool is not None:
+            # Sin esperar: una redacción pendiente ya no le sirve a nadie y
+            # bloquearía el cierre hasta el timeout de la API.
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = None
+        if self._detector is not None:
             self._detector.close()
-            self._cerrada = True
 
     def __del__(self) -> None:   # red de seguridad si el usuario cierra la pestaña
         try:

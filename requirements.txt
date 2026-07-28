@@ -9,7 +9,11 @@ scikit-learn>=1.4,<2.0
 xgboost>=2.0,<4.0
 tqdm>=4.66,<5.0
 
-# Solo para context/modelo_xgboost_ex1.ipynb. El notebook funciona sin ellas
+# Redacción de la realimentación con Gemini. Opcional: sin GEMINI_API_KEY la app
+# usa los textos de knowledge_base/ejercicios.json y funciona igual.
+google-genai>=1.0,<3.0
+
+# Solo para entrenamiento/modelo_xgboost_ex1.ipynb. El notebook funciona sin ellas
 # (usa busqueda aleatoria, importancia por permutacion y etiquetado por CSV).
 # jupyter>=1.0
 # optuna>=3.5
