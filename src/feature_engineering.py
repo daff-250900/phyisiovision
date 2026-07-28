@@ -1,3 +1,14 @@
+"""SUPERADO por `src/features_ex1.py`. No usar en código nuevo.
+
+`MotionAccumulator` calcula 7 agregados de video sobre las coordenadas
+normalizadas 2D del lado izquierdo fijo. El modelo entrenado espera 26 variables
+**por repetición** sobre coordenadas world, y el lado activo cambia entre
+sujetos. Las variables que produce este módulo no son las que el modelo vio.
+
+Se conserva solo porque `src/video_processor.py` todavía lo importa; desaparece
+cuando ese archivo se reescriba (cont/PLAN.md, fases 11 y 12).
+"""
+
 from __future__ import annotations
 
 import math
