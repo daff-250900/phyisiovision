@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "creado": "2026-07-28T17:20:47+00:00",
+  "creado": "2026-07-28T18:17:02+00:00",
   "ejercicio": "Ex1",
   "descripcion": "Clasificador de calidad de ejecucion por repeticion, ejercicio Ex1.",
   "feature_names": [
@@ -29,10 +29,9 @@
     "visibilidad_media",
     "frac_valida",
     "largo_torso",
-    "progreso_serie",
     "es_lateral"
   ],
-  "n_features": 27,
+  "n_features": 26,
   "labels": {
     "0": "rango_insuficiente",
     "1": "correcto",
@@ -64,7 +63,6 @@
     "visibilidad_media": 0.9464335970345346,
     "frac_valida": 1.0,
     "largo_torso": 0.4973207429740235,
-    "progreso_serie": 0.5,
     "es_lateral": 0.5
   },
   "entrenamiento": {
@@ -81,25 +79,25 @@
     }
   },
   "hiperparametros": {
-    "max_depth": 5,
-    "learning_rate": 0.04360666484402469,
-    "n_estimators": 450,
-    "min_child_weight": 3,
-    "subsample": 0.9839098089316881,
-    "colsample_bytree": 0.5515013420650794,
-    "gamma": 0.20539546652423468,
-    "reg_alpha": 0.00964420528263664,
-    "reg_lambda": 0.0018286127167931438
+    "max_depth": 2,
+    "learning_rate": 0.2249092168046502,
+    "n_estimators": 350,
+    "min_child_weight": 5,
+    "subsample": 0.6537467653252246,
+    "colsample_bytree": 0.6826892315995667,
+    "gamma": 0.3358333442388345,
+    "reg_alpha": 0.006425636455633985,
+    "reg_lambda": 0.001176725389317158
   },
   "metricas_loso": {
-    "macro_f1": 0.8791,
-    "balanced_acc": 0.8693,
-    "accuracy": 0.8772,
-    "mcc": 0.7665
+    "macro_f1": 0.8685,
+    "balanced_acc": 0.8334,
+    "accuracy": 0.8862,
+    "mcc": 0.7829
   },
   "ic95_macro_f1": [
-    0.8202,
-    0.9245
+    0.7912,
+    0.9234
   ],
   "baseline_reglas_macro_f1": 0.6289,
   "preprocesamiento": {

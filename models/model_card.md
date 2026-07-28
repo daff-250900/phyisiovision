@@ -1,7 +1,7 @@
 # Model card — XGBoost Ex1 (elevacion de hombro)
 
 - **Version**: 1.0.0
-- **Creado**: 2026-07-28T17:20:47+00:00
+- **Creado**: 2026-07-28T18:17:02+00:00
 - **Archivo**: `models/xgboost_model.json`
 - **Consumido por**: `src/classifier.py` (`ExerciseClassifier`)
 
@@ -27,10 +27,10 @@ Validacion **Leave-One-Subject-Out** (13 folds). Metricas out-of-fold:
 
 | Metrica | Valor |
 |---|---|
-| macro-F1 | 0.879 (IC95% 0.820–0.925) |
-| balanced accuracy | 0.869 |
-| exactitud | 0.877 |
-| MCC | 0.766 |
+| macro-F1 | 0.868 (IC95% 0.791–0.923) |
+| balanced accuracy | 0.833 |
+| exactitud | 0.886 |
+| MCC | 0.783 |
 
 Baseline de reglas (`src/classifier.py`): macro-F1 0.629.
 
