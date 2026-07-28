@@ -86,6 +86,12 @@ def create_app() -> gr.Blocks:
                     panel = gr.Markdown("### Sin sesión activa")
                     clasificacion = gr.Label(label="Última repetición",
                                              num_top_classes=3)
+                    # Recomendación de la repetición recién cerrada. Persiste
+                    # hasta la siguiente: el paciente necesita tiempo para
+                    # leerla, no un destello de una décima de segundo.
+                    feedback = gr.Markdown(
+                        "### Sin repeticiones aún\n\nEl resultado aparecerá "
+                        "aquí en cuanto completes la primera repetición.")
                     tabla_reps = gr.Dataframe(
                         headers=["#", "Resultado", "Confianza", "ROM"],
                         label="Repeticiones", interactive=False, wrap=True)
@@ -102,17 +108,17 @@ def create_app() -> gr.Blocks:
         boton_iniciar.click(
             fn=iniciar_sesion,
             inputs=[paciente, ejercicio, brazo, sesion],
-            outputs=[sesion, resumen, panel, tabla_reps],
+            outputs=[sesion, resumen, panel, tabla_reps, clasificacion, feedback],
         )
         boton_terminar.click(
             fn=terminar_serie,
             inputs=[sesion],
-            outputs=[sesion, resumen, panel],
+            outputs=[sesion, resumen, panel, feedback],
         )
         camara.stream(
             fn=procesar_frame,
             inputs=[camara, sesion],
-            outputs=[salida, panel, clasificacion, tabla_reps, sesion],
+            outputs=[salida, panel, clasificacion, tabla_reps, feedback, sesion],
             stream_every=INTERVALO_STREAM,
             # Cada sesión ocupa un PoseLandmarker y su hilo de inferencia.
             concurrency_limit=4,

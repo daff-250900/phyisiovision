@@ -59,7 +59,10 @@ def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
     if not nueva.usa_modelo:
         aviso += ("\n\n⚠️ No hay modelo entrenado disponible: la clasificación "
                   "usa reglas biomecánicas, no el clasificador.")
-    return nueva, aviso, _panel_vacio(), pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"])
+    return (nueva, aviso, _panel_vacio(),
+            pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"]),
+            None, "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en "
+            "cuanto completes la primera repetición.")
 
 
 def terminar_serie(sesion: SesionEnVivo | None):
@@ -70,7 +73,8 @@ def terminar_serie(sesion: SesionEnVivo | None):
     resumen = sesion.resumen()
     if resumen["repeticiones"] == 0:
         sesion.cerrar()
-        return None, "No se detectó ninguna repetición completa. Nada que guardar.", _panel_vacio()
+        return (None, "No se detectó ninguna repetición completa. Nada que guardar.",
+                _panel_vacio(), "")
 
     try:
         repository.save_summary(resumen)
@@ -78,25 +82,35 @@ def terminar_serie(sesion: SesionEnVivo | None):
         gr.Warning(f"No se pudo guardar en el historial: {exc}")
 
     sesion.cerrar()
-    return None, _markdown_resumen(resumen), _panel_vacio()
+    return None, _markdown_resumen(resumen), _panel_vacio(), ""
 
 
 def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
-    """Procesa un frame de la webcam. Se invoca varias veces por segundo."""
+    """Procesa un frame de la webcam. Se invoca varias veces por segundo.
+
+    Solo el panel de métricas y la imagen se refrescan en cada frame. Todo lo
+    que describe la última repetición —clasificación, recomendación y tabla— se
+    devuelve como `gr.skip()` mientras no haya una nueva: si se devolviera
+    `None`, se borraría en el frame siguiente y el paciente vería su resultado
+    aparecer y desvanecerse en una décima de segundo.
+    """
     if sesion is None:
-        return frame, _panel_inicial(), None, gr.skip(), sesion
+        return frame, _panel_inicial(), gr.skip(), gr.skip(), gr.skip(), sesion
     if frame is None:
-        return frame, _panel_vacio(), None, gr.skip(), sesion
+        return frame, _panel_vacio(), gr.skip(), gr.skip(), gr.skip(), sesion
 
     try:
         anotado, metricas, resultado = sesion.procesar(frame)
     except Exception as exc:
-        return frame, f"### Error\n\n`{exc}`", None, gr.skip(), sesion
+        return (frame, f"### Error\n\n`{exc}`",
+                gr.skip(), gr.skip(), gr.skip(), sesion)
 
     panel = _panel_metricas(metricas, sesion)
-    etiquetas = resultado.probabilities if resultado else None
-    tabla = _tabla_repeticiones(sesion) if resultado else gr.skip()
-    return anotado, panel, etiquetas, tabla, sesion
+    if resultado is None:
+        return anotado, panel, gr.skip(), gr.skip(), gr.skip(), sesion
+
+    return (anotado, panel, resultado.probabilities,
+            _tabla_repeticiones(sesion), _feedback_repeticion(resultado), sesion)
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +149,37 @@ def _panel_metricas(metricas, sesion: SesionEnVivo) -> str:
         f"| Fase | {fase} |\n"
         f"| Brazo | {lado} |"
         f"{linea_ultima}"
+    )
+
+
+#: Marca visual por clase, para que el resultado se lea de un vistazo.
+_ICONO = {"correcto": "✅", "rango_insuficiente": "⚠️", "compensacion_tronco": "↩️"}
+
+
+def _feedback_repeticion(resultado) -> str:
+    """Recomendación de la base de conocimiento para la repetición recién cerrada.
+
+    Es el contenido que `SesionEnVivo` ya venía calculando por repetición y que
+    hasta ahora solo se mostraba al terminar la serie entera.
+    """
+    conocimiento = resultado.feedback
+    icono = _ICONO.get(resultado.label, "•")
+    variables = resultado.variables
+    detalle = " · ".join(filter(None, [
+        f"ROM {variables['rom_max']:.0f}°" if "rom_max" in variables else "",
+        f"tronco {variables['tronco_max']:.0f}°" if "tronco_max" in variables else "",
+        f"{variables['duracion_s']:.1f} s" if "duracion_s" in variables else "",
+    ]))
+    aviso_reglas = ("\n\n<sub>Clasificación por reglas biomecánicas, sin modelo "
+                    "entrenado.</sub>" if resultado.source == "reglas" else "")
+
+    return (
+        f"### {icono} Repetición {resultado.indice} — {conocimiento['title']}\n\n"
+        f"**{resultado.label}** · confianza {resultado.confidence:.0%}  \n"
+        f"<sub>{detalle}</sub>\n\n"
+        f"{conocimiento['message']}\n\n"
+        f"> **Precaución:** {conocimiento['safety_warning']}"
+        f"{aviso_reglas}"
     )
 
 

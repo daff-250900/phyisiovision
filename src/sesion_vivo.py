@@ -18,6 +18,7 @@ B. Clasificación  al cerrar repetición    XGBoost sobre las 26 variables
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,6 +36,17 @@ FASES_LEGIBLES = {
     "reposo": "En reposo",
     "subiendo": "Subiendo",
     "bajando": "Bajando",
+}
+
+#: Segundos que el aviso de la última repetición permanece sobre la imagen.
+DURACION_AVISO_S = 3.0
+
+#: Texto del aviso, en BGR y **sin acentos**: `cv2.putText` solo dibuja ASCII y
+#: sustituye por interrogantes cualquier carácter fuera de ese rango.
+AVISO_POR_CLASE = {
+    "correcto": ("CORRECTO", (105, 157, 79)),
+    "rango_insuficiente": ("RANGO INSUFICIENTE", (87, 119, 217)),
+    "compensacion_tronco": ("COMPENSACION DE TRONCO", (215, 127, 107)),
 }
 
 
@@ -87,6 +99,7 @@ class SesionEnVivo:
     repeticiones: list[ResultadoRepeticion] = field(default_factory=list, init=False)
     frames_vistos: int = field(default=0, init=False)
     frames_con_pose: int = field(default=0, init=False)
+    _aviso: tuple | None = field(default=None, init=False, repr=False)
     _cerrada: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -133,10 +146,53 @@ class SesionEnVivo:
 
         self.frames_con_pose += 1
         metricas, variables = self._acumulador.update(pose.fila())
-        anotado = cv2.cvtColor(pose.annotated_frame, cv2.COLOR_BGR2RGB)
 
         resultado = self._clasificar(variables) if variables else None
+        if resultado is not None:
+            self._aviso = (resultado, time.monotonic())
+
+        anotado = cv2.cvtColor(self._superponer_aviso(pose.annotated_frame),
+                               cv2.COLOR_BGR2RGB)
         return anotado, metricas, resultado
+
+    def _superponer_aviso(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Dibuja el resultado de la última repetición sobre la imagen.
+
+        El panel lateral ya lo dice, pero el paciente está mirándose a sí mismo,
+        no al panel. El aviso desaparece a los `DURACION_AVISO_S` segundos para
+        no tapar la siguiente repetición.
+        """
+        if self._aviso is None:
+            return frame_bgr
+        resultado, instante = self._aviso
+        if time.monotonic() - instante > DURACION_AVISO_S:
+            self._aviso = None
+            return frame_bgr
+
+        texto, color = AVISO_POR_CLASE.get(
+            resultado.label, (resultado.label.upper(), (128, 128, 128)))
+        etiqueta = f"REP {resultado.indice}: {texto} ({resultado.confidence:.0%})"
+
+        salida = frame_bgr.copy()
+        alto, ancho = salida.shape[:2]
+        escala = max(0.5, ancho / 1100)
+        grosor = max(1, int(ancho / 640))
+        (ancho_txt, alto_txt), _ = cv2.getTextSize(
+            etiqueta, cv2.FONT_HERSHEY_SIMPLEX, escala, grosor)
+
+        margen = int(alto_txt * 0.6)
+        x0, y0 = margen, margen
+        x1 = min(ancho - margen, x0 + ancho_txt + 2 * margen)
+        y1 = y0 + alto_txt + 2 * margen
+
+        # Banda semitransparente para que el texto se lea sobre cualquier fondo.
+        capa = salida.copy()
+        cv2.rectangle(capa, (x0, y0), (x1, y1), color, -1)
+        cv2.addWeighted(capa, 0.75, salida, 0.25, 0, salida)
+        cv2.putText(salida, etiqueta, (x0 + margen, y1 - margen),
+                    cv2.FONT_HERSHEY_SIMPLEX, escala, (255, 255, 255), grosor,
+                    cv2.LINE_AA)
+        return salida
 
     def _clasificar(self, variables: dict[str, float]) -> ResultadoRepeticion:
         prediccion = self._clasificador.predict(variables)
