@@ -5,8 +5,19 @@ __pycache__/
 data/*.db
 data/uploads/*
 data/processed/*
+data/videos/*
+data/landmarks/
+data/datasets/
 !data/uploads/.gitkeep
 !data/processed/.gitkeep
+
+# Pesos de MediaPipe (30 MB, se descargan solos desde el notebook)
+models/mediapipe/
+cont/*
+# Figuras regeneradas al ejecutar el notebook.
+# qc_orientacion.png es un mosaico con las caras de los 26 pacientes: no debe
+# entrar nunca al historial de git, de donde ya no se puede sacar.
+entrenamiento/figuras/
 .claude/
 .pytest_cache/
 ANALISIS.md
