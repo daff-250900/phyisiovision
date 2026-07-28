@@ -207,20 +207,41 @@ class AcumuladorEnVivo:
     - El dict de variables de una repetición cuando esta se cierra, listo para
       `ExerciseClassifier`.
 
-    El lado activo no se puede decidir de antemano —cambia entre sujetos— así
-    que se detecta durante un calentamiento de `calentamiento_s` segundos.
+    **Detección del lado activo.** El brazo que trabaja cambia entre sujetos, y
+    en vivo no se puede mirar el video entero para decidirlo. Una ventana fija
+    tampoco sirve, y no por la razón evidente: en este protocolo los sujetos
+    mueven **los dos** brazos, el activo simplemente más. Medido sobre Ex1, a los
+    3 s ambos lados presentan 75-92° de recorrido y la razón entre ellos es de
+    1.03-1.07, indistinguible del ruido; con una ventana fija de 6 s se elige el
+    brazo equivocado en 3 de cada 4 sujetos, y entonces no se detecta ni una
+    repetición porque el brazo escogido apenas se mueve.
+
+    Lo que discrimina es la **razón** entre recorridos, que tarda entre 5 y 12 s
+    en superar `RAZON_LADO_MINIMA`. El calentamiento por tanto no termina por
+    tiempo sino cuando hay un ganador claro, y las repeticiones ocurridas
+    mientras tanto no se pierden: el búfer se reprocesa con el lado ya decidido.
+    `calentamiento_max_s` es la red de seguridad para no esperar indefinidamente.
     """
 
+    #: Cuánto debe superar el lado activo al pasivo para darlo por bueno.
+    RAZON_LADO_MINIMA = 1.15
+    #: Comprobaciones consecutivas que deben coincidir antes de comprometerse.
+    CONFIRMACIONES_LADO = 3
+
     fps: float = fx.FPS_NOMINAL
-    calentamiento_s: float = 8.0
+    calentamiento_s: float = 8.0        # mínimo antes de la primera comprobación
+    calentamiento_max_s: float = 40.0   # tope: pasado esto se decide igualmente
     lado: str | None = None
 
     _filas_calentamiento: list[dict] = field(default_factory=list, init=False)
-    _serie: deque = field(default_factory=lambda: deque(maxlen=2000), init=False)
+    _serie: deque = field(default_factory=lambda: deque(maxlen=4000), init=False)
+    _pendientes: deque = field(default_factory=deque, init=False)
     _buffer: BufferCausal | None = field(default=None, init=False)
     _segmentador: SegmentadorOnline | None = field(default=None, init=False)
     _n_frames: int = field(default=0, init=False)
     _n_reps: int = field(default=0, init=False)
+    _lado_candidato: str | None = field(default=None, init=False)
+    _confirmaciones: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self._buffer = BufferCausal(self.fps)
@@ -245,20 +266,83 @@ class AcumuladorEnVivo:
         fila.setdefault("t_seg", self._n_frames / self.fps)
         self._n_frames += 1
 
-        # --- calentamiento: acumular hasta poder decidir el lado activo
         if self.lado is None:
             self._filas_calentamiento.append(fila)
-            if len(self._filas_calentamiento) >= int(self.calentamiento_s * self.fps):
-                df = pd.DataFrame(self._filas_calentamiento)
-                self.lado, _, _ = fx.detectar_lado(df)
-                # Reproducir el calentamiento ya con el lado decidido, para no
-                # perder las repeticiones que ocurrieron durante él.
+            if self._intentar_decidir_lado():
+                self._recalibrar_prominencia()
+                # Reproducir el calentamiento con el lado ya decidido, para no
+                # perder las repeticiones ocurridas durante él.
                 for f in self._filas_calentamiento:
-                    self._procesar(f)
+                    _, variables = self._procesar(f)
+                    if variables:
+                        self._pendientes.append(variables)
                 self._filas_calentamiento.clear()
+                return self._metricas(np.nan, np.nan), self._siguiente_pendiente()
             return self._metricas(np.nan, np.nan), None
 
-        return self._procesar(fila)
+        metricas, variables = self._procesar(fila)
+        if variables:
+            self._pendientes.append(variables)
+        return metricas, self._siguiente_pendiente()
+
+    def _siguiente_pendiente(self) -> dict | None:
+        return self._pendientes.popleft() if self._pendientes else None
+
+    def _recalibrar_prominencia(self) -> None:
+        """Fija la prominencia con todo el calentamiento, ya con el lado decidido.
+
+        El segmentador se autocalibra con sus primeras muestras, que pueden caer
+        en un tramo de reposo y dar un umbral poco representativo. Una vez se
+        sabe qué brazo trabaja, el búfer de calentamiento es una estimación
+        mucho mejor del recorrido real.
+        """
+        if not self._filas_calentamiento:
+            return
+        df = pd.DataFrame(self._filas_calentamiento)
+        s = fx.series_angulares(df, self.lado)
+        suave = fx.suavizar(s["abduccion_hombro"].where(s.valido), self.fps)
+        self._segmentador = SegmentadorOnline(
+            self.fps, prominencia=fx.prominencia_para(suave))
+
+    def _intentar_decidir_lado(self) -> bool:
+        """Fija `self.lado` si ya hay un ganador claro. True si se decidió.
+
+        Precisión medida sobre las 13 vistas frontales de Ex1 (que es lo que ve
+        una webcam): **11 de 13**. Los dos fallos son sujetos que mueven ambos
+        brazos con recorridos casi iguales. Por eso la interfaz permite fijar el
+        brazo a mano: el paciente sabe cuál está ejercitando.
+        """
+        n = len(self._filas_calentamiento)
+        minimo = int(self.calentamiento_s * self.fps)
+        if n < minimo:
+            return False
+        # Comprobar una vez por segundo, no en cada frame: detectar_lado
+        # reconstruye las series completas y no es gratis.
+        if n % int(self.fps) != 0 and n < int(self.calentamiento_max_s * self.fps):
+            return False
+
+        df = pd.DataFrame(self._filas_calentamiento)
+        lado, rango_izq, rango_der = fx.detectar_lado(df)
+        mayor, menor = max(rango_izq, rango_der), min(rango_izq, rango_der)
+
+        hay_movimiento = mayor >= fx.MIN_AMPLITUD_REP
+        hay_ganador = mayor >= self.RAZON_LADO_MINIMA * max(menor, 1e-6)
+        agotado = n >= int(self.calentamiento_max_s * self.fps)
+
+        # Exigir que varias comprobaciones seguidas coincidan. Una sola medición
+        # favorable puede ser ruido: en los primeros segundos la razón entre
+        # lados oscila y comprometerse con la primera lectura buena falla en la
+        # mitad de los sujetos.
+        if hay_movimiento and hay_ganador and lado == self._lado_candidato:
+            self._confirmaciones += 1
+        else:
+            self._lado_candidato = lado if (hay_movimiento and hay_ganador) else None
+            self._confirmaciones = 1 if self._lado_candidato else 0
+
+        if agotado or self._confirmaciones >= self.CONFIRMACIONES_LADO:
+            self.lado = lado
+            return True
+        return False
 
     def _procesar(self, fila: dict) -> tuple[MetricasInstantaneas, dict | None]:
         s = fx.series_angulares(pd.DataFrame([fila]), self.lado)

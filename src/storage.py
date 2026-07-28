@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,37 +39,43 @@ class SessionRepository:
                 )
                 """
             )
+            # Migración idempotente. Las cuatro columnas de arriba pertenecen al
+            # contrato antiguo de 4 variables; el modelo actual usa 26 y el
+            # conjunto puede volver a cambiar al reentrenar. Guardar el resumen
+            # como JSON evita tener que migrar el esquema en cada reentreno.
+            existentes = {fila["name"] for fila in
+                          connection.execute("PRAGMA table_info(sessions)")}
+            for columna, tipo in (("rom_medio", "REAL"), ("correctas", "INTEGER"),
+                                  ("lado", "TEXT"), ("cobertura_pose", "REAL"),
+                                  ("fuente", "TEXT"), ("resumen_json", "TEXT")):
+                if columna not in existentes:
+                    connection.execute(
+                        f"ALTER TABLE sessions ADD COLUMN {columna} {tipo}")
 
-    def save_session(
-        self,
-        patient_name: str,
-        exercise_id: str,
-        classification: str,
-        confidence: float,
-        max_rom: float,
-        repetitions: int,
-        features: dict[str, float],
-    ) -> int:
+    def save_summary(self, resumen: dict[str, object]) -> int:
+        """Guarda el resumen de una serie devuelto por `SesionEnVivo.resumen()`."""
         with self._connect() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO sessions (
                     patient_name, exercise_id, classification, confidence,
-                    max_rom, repetitions, shoulder_angle, elbow_angle,
-                    trunk_inclination, movement_speed, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    max_rom, repetitions, rom_medio, correctas, lado,
+                    cobertura_pose, fuente, resumen_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    patient_name,
-                    exercise_id,
-                    classification,
-                    confidence,
-                    max_rom,
-                    repetitions,
-                    features.get("shoulder_angle"),
-                    features.get("elbow_angle"),
-                    features.get("trunk_inclination"),
-                    features.get("movement_speed"),
+                    str(resumen.get("paciente", "")),
+                    str(resumen.get("ejercicio", "")),
+                    str(resumen.get("clasificacion") or "sin_datos"),
+                    float(resumen.get("confianza") or 0.0),
+                    float(resumen.get("rom_max") or 0.0),
+                    int(resumen.get("repeticiones") or 0),
+                    float(resumen.get("rom_medio") or 0.0),
+                    int(resumen.get("correctas") or 0),
+                    resumen.get("lado"),
+                    float(resumen.get("cobertura_pose") or 0.0),
+                    str(resumen.get("fuente", "desconocido")),
+                    json.dumps(resumen, ensure_ascii=False, default=str),
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -79,7 +86,7 @@ class SessionRepository:
             rows = connection.execute(
                 """
                 SELECT created_at, exercise_id, classification, confidence,
-                       max_rom, repetitions
+                       max_rom, repetitions, correctas, lado, fuente
                 FROM sessions
                 WHERE lower(patient_name) = lower(?)
                 ORDER BY created_at DESC

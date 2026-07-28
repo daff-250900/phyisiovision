@@ -1,113 +1,204 @@
+"""Callbacks de la interfaz en tiempo real."""
+
 from __future__ import annotations
 
 from typing import Any
 
 import gradio as gr
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from matplotlib.figure import Figure
 
-from src.classifier import ExerciseClassifier
-from src.feedback import FeedbackService
 from src.rag import KnowledgeBase
+from src.sesion_vivo import FASES_LEGIBLES, SesionEnVivo
 from src.storage import SessionRepository
-from src.video_processor import VideoProcessor
 
-
-video_processor = VideoProcessor()
-classifier = ExerciseClassifier()
+# Estos dos objetos sí pueden compartirse: son de solo lectura y no guardan
+# estado por usuario. El `PoseLandmarker`, en cambio, vive dentro de cada
+# `SesionEnVivo` y nunca se comparte entre sesiones.
 knowledge_base = KnowledgeBase()
-feedback_service = FeedbackService(knowledge_base)
 repository = SessionRepository()
 
+COLUMNAS_HISTORIAL = ["Fecha", "Ejercicio", "Resultado", "Confianza",
+                      "ROM máx.", "Reps", "Correctas", "Lado"]
 
-def analyze_video(
-    patient_name: str,
-    exercise_id: str,
-    video_path: str | None,
-    session_state: dict[str, Any] | None,
-):
-    if not patient_name or not patient_name.strip():
-        raise gr.Error("Ingresa el nombre o identificador del paciente.")
-    if not video_path:
-        raise gr.Error("Carga o graba un video.")
+
+def ejercicios_disponibles() -> list[tuple[str, str]]:
+    """Opciones del desplegable, leídas de la base de conocimiento.
+
+    Añadir un ejercicio pasa a ser editar `knowledge_base/ejercicios.json`.
+    """
+    return [(datos.get("descripcion", clave), clave)
+            for clave, datos in knowledge_base.data.items()]
+
+
+# --------------------------------------------------------------------------- #
+# Ciclo de la sesión
+# --------------------------------------------------------------------------- #
+
+def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
+                   sesion: SesionEnVivo | None):
+    """Crea la sesión. Cada usuario tiene la suya en su `gr.State`."""
+    if not paciente or not paciente.strip():
+        raise gr.Error("Escribe el nombre o identificador del paciente.")
+    if not ejercicio:
+        raise gr.Error("Elige un ejercicio.")
+
+    if sesion is not None:
+        sesion.cerrar()
+
+    lado = brazo if brazo in ("left", "right") else None
+    nueva = SesionEnVivo(paciente=paciente.strip(), ejercicio=ejercicio,
+                         lado_fijado=lado)
+    aviso = ("Sesión iniciada. Colócate de cuerpo entero frente a la cámara."
+             if lado else
+             "Sesión iniciada. Colócate de cuerpo entero frente a la cámara: "
+             "los primeros segundos se usan para detectar qué brazo trabaja. "
+             "Si el brazo detectado no es el correcto, elígelo a mano y "
+             "reinicia la sesión.")
+    if not nueva.usa_modelo:
+        aviso += ("\n\n⚠️ No hay modelo entrenado disponible: la clasificación "
+                  "usa reglas biomecánicas, no el clasificador.")
+    return nueva, aviso, _panel_vacio(), pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"])
+
+
+def terminar_serie(sesion: SesionEnVivo | None):
+    """Cierra la serie, guarda el resumen y libera el detector."""
+    if sesion is None:
+        raise gr.Error("No hay ninguna sesión activa.")
+
+    resumen = sesion.resumen()
+    if resumen["repeticiones"] == 0:
+        sesion.cerrar()
+        return None, "No se detectó ninguna repetición completa. Nada que guardar.", _panel_vacio()
 
     try:
-        result = video_processor.process(video_path, exercise_id)
-        prediction = classifier.predict(result.features)
-        feedback = feedback_service.generate(exercise_id, prediction, result.features)
-        session_id = repository.save_session(
-            patient_name=patient_name.strip(),
-            exercise_id=exercise_id,
-            classification=str(prediction["label"]),
-            confidence=float(prediction["confidence"]),
-            max_rom=result.max_rom,
-            repetitions=result.repetitions,
-            features=result.features,
-        )
-    except gr.Error:
-        raise
+        repository.save_summary(resumen)
+    except Exception as exc:                      # no perder la sesión por la BD
+        gr.Warning(f"No se pudo guardar en el historial: {exc}")
+
+    sesion.cerrar()
+    return None, _markdown_resumen(resumen), _panel_vacio()
+
+
+def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
+    """Procesa un frame de la webcam. Se invoca varias veces por segundo."""
+    if sesion is None:
+        return frame, _panel_inicial(), None, gr.skip(), sesion
+    if frame is None:
+        return frame, _panel_vacio(), None, gr.skip(), sesion
+
+    try:
+        anotado, metricas, resultado = sesion.procesar(frame)
     except Exception as exc:
-        raise gr.Error(f"No fue posible analizar el video: {exc}") from exc
+        return frame, f"### Error\n\n`{exc}`", None, gr.skip(), sesion
 
-    metrics = {
-        **{key: round(value, 2) for key, value in result.features.items()},
-        "max_rom": round(result.max_rom, 2),
-        "repetitions": result.repetitions,
-        "frames": result.frame_count,
-        "classifier_source": prediction.get("source"),
-    }
-    probability_label = {
-        key: float(value) for key, value in prediction.get("probabilities", {}).items()
-    }
-    warnings = "\n".join(f"- {item}" for item in result.warnings)
-    warning_block = f"\n\n### Observaciones\n{warnings}" if warnings else ""
-    feedback_markdown = (
-        f"## {feedback['title']}\n\n"
-        f"**Clasificación:** `{feedback['status']}`  \n"
-        f"**Confianza:** {feedback['confidence']:.1%}  \n\n"
-        f"{feedback['message']}\n\n"
-        f"> **Precaución:** {feedback['safety_warning']}"
-        f"{warning_block}"
-    )
-    new_state = {
-        "session_id": session_id,
-        "patient_name": patient_name.strip(),
-        "exercise_id": exercise_id,
-    }
+    panel = _panel_metricas(metricas, sesion)
+    etiquetas = resultado.probabilities if resultado else None
+    tabla = _tabla_repeticiones(sesion) if resultado else gr.skip()
+    return anotado, panel, etiquetas, tabla, sesion
+
+
+# --------------------------------------------------------------------------- #
+# Paneles
+# --------------------------------------------------------------------------- #
+
+def _panel_inicial() -> str:
+    return ("### Sin sesión activa\n\n"
+            "Escribe el paciente, elige el ejercicio y pulsa **Iniciar sesión**.")
+
+
+def _panel_vacio() -> str:
+    return "### —\n\nEsperando imagen de la cámara."
+
+
+def _panel_metricas(metricas, sesion: SesionEnVivo) -> str:
+    if metricas.calibrando:
+        return ("### Calibrando…\n\n"
+                "Manteniendo el encuadre unos segundos para detectar el brazo "
+                "que trabaja. Muévete con normalidad.")
+
+    def grados(valor: float) -> str:
+        return "—" if valor is None or np.isnan(valor) else f"{valor:.0f}°"
+
+    fase = FASES_LEGIBLES.get(metricas.fase, metricas.fase)
+    lado = {"left": "izquierdo", "right": "derecho"}.get(metricas.lado or "", "—")
+    ultimo = sesion.repeticiones[-1] if sesion.repeticiones else None
+    linea_ultima = (f"\n\n**Última repetición:** {ultimo.label} "
+                    f"({ultimo.confidence:.0%})" if ultimo else "")
+
     return (
-        result.output_video_path,
-        probability_label,
-        metrics,
-        feedback_markdown,
-        "✅ Análisis completado y sesión guardada.",
-        new_state,
+        f"### Repeticiones: {metricas.repeticiones}\n\n"
+        f"| | |\n|---|---|\n"
+        f"| Hombro | **{grados(metricas.abduccion)}** |\n"
+        f"| Tronco | {grados(metricas.inclinacion_tronco)} |\n"
+        f"| Fase | {fase} |\n"
+        f"| Brazo | {lado} |"
+        f"{linea_ultima}"
     )
 
 
-def load_patient_history(patient_name: str):
-    if not patient_name or not patient_name.strip():
-        raise gr.Error("Ingresa el nombre del paciente.")
-    rows = repository.get_patient_history(patient_name)
-    columns = ["Fecha", "Ejercicio", "Clasificación", "Confianza", "ROM máximo", "Repeticiones"]
-    if not rows:
-        return pd.DataFrame(columns=columns), None
+def _tabla_repeticiones(sesion: SesionEnVivo) -> pd.DataFrame:
+    return pd.DataFrame([
+        {"#": r.indice, "Resultado": r.label, "Confianza": f"{r.confidence:.0%}",
+         "ROM": f"{r.variables.get('rom_max', 0):.0f}°"}
+        for r in reversed(sesion.repeticiones)
+    ])
 
-    dataframe = pd.DataFrame(rows)
-    dataframe["created_at"] = pd.to_datetime(dataframe["created_at"], errors="coerce")
-    dataframe = dataframe.sort_values("created_at")
 
-    figure, axis = plt.subplots(figsize=(8, 4))
-    axis.plot(dataframe["created_at"], dataframe["max_rom"], marker="o")
-    axis.set_title("Evolución del rango máximo de movimiento")
-    axis.set_xlabel("Fecha")
-    axis.set_ylabel("ROM máximo (grados)")
-    axis.grid(True, alpha=0.3)
-    figure.autofmt_xdate()
-    figure.tight_layout()
+def _markdown_resumen(resumen: dict[str, Any]) -> str:
+    conocimiento = knowledge_base.retrieve(
+        str(resumen["ejercicio"]), str(resumen["clasificacion"]))
+    correctas, total = resumen["correctas"], resumen["repeticiones"]
+    aviso_fuente = ("\n\n> Clasificación por **reglas biomecánicas**, no por el "
+                    "modelo entrenado." if resumen["fuente"] == "reglas" else "")
+    aviso_cobertura = ("\n\n> La postura fue visible en menos de la mitad del "
+                       "tiempo; los resultados son poco fiables."
+                       if resumen["cobertura_pose"] < 0.5 else "")
+    return (
+        f"## {conocimiento.get('titulo', 'Resultado')}\n\n"
+        f"**{correctas} de {total} repeticiones correctas.** "
+        f"ROM máximo {resumen['rom_max']:.0f}°, medio {resumen['rom_medio']:.0f}°.\n\n"
+        f"{conocimiento['recomendacion']}\n\n"
+        f"> **Precaución:** {conocimiento['precaucion']}"
+        f"{aviso_fuente}{aviso_cobertura}"
+    )
 
-    display = dataframe.sort_values("created_at", ascending=False).copy()
-    display["created_at"] = display["created_at"].dt.strftime("%Y-%m-%d %H:%M")
-    display["confidence"] = display["confidence"].map(lambda value: f"{value:.1%}")
-    display["max_rom"] = display["max_rom"].round(2)
-    display.columns = columns
-    return display, figure
+
+# --------------------------------------------------------------------------- #
+# Historial
+# --------------------------------------------------------------------------- #
+
+def cargar_historial(paciente: str):
+    if not paciente or not paciente.strip():
+        raise gr.Error("Escribe el nombre del paciente.")
+    filas = repository.get_patient_history(paciente)
+    if not filas:
+        return pd.DataFrame(columns=COLUMNAS_HISTORIAL), None
+
+    datos = pd.DataFrame(filas)
+    datos["created_at"] = pd.to_datetime(datos["created_at"], errors="coerce")
+    datos = datos.sort_values("created_at")
+
+    # matplotlib.figure.Figure en vez de plt.subplots(): pyplot mantiene estado
+    # global y no es seguro con los hilos de Gradio, además de filtrar memoria.
+    figura = Figure(figsize=(8, 3.6))
+    eje = figura.add_subplot(111)
+    eje.plot(datos["created_at"], datos["max_rom"], marker="o", color="#4F9D69")
+    eje.set_title("Evolución del rango máximo de movimiento")
+    eje.set_xlabel("Fecha")
+    eje.set_ylabel("ROM máximo (grados)")
+    eje.grid(True, alpha=0.3)
+    figura.autofmt_xdate()
+    figura.tight_layout()
+
+    vista = datos.sort_values("created_at", ascending=False).copy()
+    vista["created_at"] = vista["created_at"].dt.strftime("%Y-%m-%d %H:%M")
+    vista["confidence"] = vista["confidence"].map(lambda v: f"{v:.0%}")
+    vista["max_rom"] = vista["max_rom"].round(1)
+    vista["lado"] = vista["lado"].map(
+        {"left": "izquierdo", "right": "derecho"}).fillna("—")
+    vista = vista[["created_at", "exercise_id", "classification", "confidence",
+                   "max_rom", "repetitions", "correctas", "lado"]]
+    vista.columns = COLUMNAS_HISTORIAL
+    return vista, figura
