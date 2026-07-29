@@ -27,15 +27,25 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+# Importar `settings` carga `.env`, así que basta con poner la clave ahí: no
+# hace falta exportarla en la terminal.
+from src.config import settings
+
 logger = logging.getLogger(__name__)
 
-#: Modelo por defecto. Configurable con `PHYSIOVISION_GEMINI_MODELO` por si
-#: cambia el catálogo o se quiere uno más barato.
-MODELO_POR_DEFECTO = os.environ.get("PHYSIOVISION_GEMINI_MODELO", "gemini-2.5-flash")
+#: Modelo por defecto. Configurable con `PHYSIOVISION_GEMINI_MODELO`.
+MODELO_POR_DEFECTO = settings.gemini_model
 
-#: Segundos antes de rendirse. Una repetición dura ~5 s: pasado ese margen el
-#: mensaje llegaría tarde y el paciente ya estaría en la siguiente.
-TIMEOUT_S = float(os.environ.get("PHYSIOVISION_GEMINI_TIMEOUT", "6"))
+#: Mínimo que acepta la API. Verificado contra el servicio real: con 6 s
+#: devuelve `400 INVALID_ARGUMENT — Manually set deadline 6s is too short.
+#: Minimum allowed deadline is 10s`, y entonces **ninguna** llamada funciona.
+TIMEOUT_MINIMO_S = 10.0
+
+#: Segundos antes de rendirse. Que sea mayor que una repetición no es un problema
+#: porque la llamada es asíncrona: el mensaje del JSON se muestra al instante y
+#: el redactado lo sustituye cuando llegue, aunque sea durante la repetición
+#: siguiente. Se fuerza el mínimo de la API por si la configuración pide menos.
+TIMEOUT_S = max(TIMEOUT_MINIMO_S, settings.gemini_timeout)
 
 INSTRUCCION_SISTEMA = """\
 Eres el asistente de redacción de PhysioVision, una app de apoyo a ejercicios de

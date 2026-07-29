@@ -8,6 +8,7 @@ bucle de streaming y que **nunca salga el nombre del paciente**.
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -249,3 +250,49 @@ def test_encolar_tras_cerrar_no_rompe() -> None:
     sesion._redactor = _redactor(_ClienteFalso())
     sesion.cerrar()
     sesion._encolar_redaccion(_resultado())     # no debe lanzar
+
+
+# --------------------------------------------------------------------------- #
+# Carga de .env
+# --------------------------------------------------------------------------- #
+
+def test_dotenv_se_carga_desde_archivo(tmp_path, monkeypatch) -> None:
+    """Documentamos .env en .env.example: tiene que leerse de verdad."""
+    from src.config import cargar_dotenv
+
+    # El .env real del proyecto ya se cargó al importar src.config, así que hay
+    # que limpiar estas claves para que la prueba no dependa de él.
+    for clave in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "PV_TEST_DOTENV"):
+        monkeypatch.delenv(clave, raising=False)
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# comentario\n"
+        "\n"
+        "GEMINI_API_KEY=clave-secreta\n"
+        'export PV_TEST_DOTENV="valor entrecomillado"\n'
+        "LINEA_SIN_IGUAL\n",
+        encoding="utf-8")
+
+    cargadas = cargar_dotenv(env)
+    assert cargadas["GEMINI_API_KEY"] == "clave-secreta"
+    assert cargadas["PV_TEST_DOTENV"] == "valor entrecomillado"
+    assert "LINEA_SIN_IGUAL" not in cargadas
+    assert RedactorGemini(habilitado=False).api_key == "clave-secreta"
+
+
+def test_el_entorno_manda_sobre_el_archivo(tmp_path, monkeypatch) -> None:
+    """Lo exportado en la terminal gana: es lo que se espera al depurar."""
+    from src.config import cargar_dotenv
+
+    monkeypatch.setenv("GEMINI_API_KEY", "la-de-la-terminal")
+    env = tmp_path / ".env"
+    env.write_text("GEMINI_API_KEY=la-del-archivo\n", encoding="utf-8")
+
+    assert "GEMINI_API_KEY" not in cargar_dotenv(env)
+    assert os.environ["GEMINI_API_KEY"] == "la-de-la-terminal"
+
+
+def test_sin_archivo_no_falla(tmp_path) -> None:
+    from src.config import cargar_dotenv
+    assert cargar_dotenv(tmp_path / "no-existe") == {}
