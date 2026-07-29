@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,6 +48,30 @@ TIMEOUT_MINIMO_S = 10.0
 #: siguiente. Se fuerza el mínimo de la API por si la configuración pide menos.
 TIMEOUT_S = max(TIMEOUT_MINIMO_S, settings.gemini_timeout)
 
+#: Intentos por mensaje. Dos, no más: cuando el servicio falla no lo hace rápido
+#: sino agotando el plazo, así que cada reintento cuesta `TIMEOUT_S` de espera.
+#: Medido el 2026-07-29 durante una caída del servicio, con tres intentos cada
+#: mensaje tardaba 35 s en rendirse y la cola de redacción se atascaba.
+INTENTOS = int(os.environ.get("PHYSIOVISION_GEMINI_INTENTOS", "2"))
+
+#: Fallos seguidos que abren el cortacircuitos.
+FALLOS_PARA_ABRIR = 3
+#: Segundos que se deja de llamar tras abrirlo.
+PAUSA_CIRCUITO_S = 60.0
+
+#: Codigos que no tiene sentido reintentar: el resultado seria el mismo y solo
+#: gastaria cuota.
+_ERRORES_PERMANENTES = ("400", "401", "403", "404", "429",
+                        "INVALID_ARGUMENT", "NOT_FOUND", "PERMISSION_DENIED",
+                        "RESOURCE_EXHAUSTED", "UNAUTHENTICATED")
+
+
+def _es_transitorio(exc: Exception) -> bool:
+    """True si merece la pena reintentar (504, 503, corte de red...)."""
+    texto = str(exc)
+    return not any(codigo in texto for codigo in _ERRORES_PERMANENTES)
+
+
 INSTRUCCION_SISTEMA = """\
 Eres el asistente de redacción de PhysioVision, una app de apoyo a ejercicios de
 rehabilitación de hombro. Tu único trabajo es reescribir una recomendación ya
@@ -63,6 +88,7 @@ REGLAS INVIOLABLES:
 6. Sin markdown, sin listas, sin emojis, sin comillas. Texto corrido.
 7. Si los datos son contradictorios o insuficientes, limítate a reformular la
    recomendación sin citar números.
+8.Crea un resumen de maximo 6 palabras.
 """
 
 PROMPT_REPETICION = """\
@@ -115,6 +141,8 @@ class RedactorGemini:
     habilitado: bool = True
     _cliente: Any = None
     _motivo: str = ""
+    _fallos_seguidos: int = 0
+    _circuito_hasta: float = 0.0
 
     def __post_init__(self) -> None:
         self.api_key = self.api_key or os.environ.get("GEMINI_API_KEY") \
@@ -149,27 +177,91 @@ class RedactorGemini:
 
     # -- generación ---------------------------------------------------------- #
 
-    def _generar(self, prompt: str, max_tokens: int) -> str | None:
-        if not self.disponible:
+    def _generar(self, prompt: str, max_tokens: int,
+                 intentos: int = INTENTOS) -> str | None:
+        """Genera texto, reintentando los fallos transitorios.
+
+        La latencia del servicio es **bimodal**: o responde en 0.6-0.7 s o se
+        queda colgado hasta agotar el plazo y devuelve 504. Medido el 2026-07-29
+        sobre 8 llamadas seguidas al mismo modelo: 2 respondieron en 0.7 s y 6
+        agotaron los 39 s. No depende del prompt ni del modelo — pasa igual con
+        el nombre concreto y con el alias.
+
+        Con esa forma, reintentar sale muy a cuenta: un exito llega en menos de
+        un segundo, asi que el coste de un reintento es el plazo perdido, no el
+        del calculo. Los errores permanentes (404 de modelo inexistente, 400 de
+        argumento invalido, 429 de cuota) no se reintentan: repetirlos solo
+        gastaria cuota.
+        """
+        if not self.disponible or self._circuito_abierto():
             return None
-        try:
-            respuesta = self._cliente.models.generate_content(
-                model=self.modelo,
-                contents=prompt,
-                config=self._tipos.GenerateContentConfig(
-                    system_instruction=INSTRUCCION_SISTEMA,
-                    temperature=0.4,          # algo de variedad, sin divagar
-                    max_output_tokens=max_tokens,
-                    candidate_count=1,
-                ),
-            )
-            texto = (respuesta.text or "").strip()
-            return texto or None
-        except Exception as exc:
-            # Nunca romper la sesión por un fallo de red o de cuota: el texto
-            # base del JSON ya es correcto por sí solo.
-            logger.warning("Gemini no respondió (%s); se usa el texto base", exc)
-            return None
+
+        ultimo_error: Exception | None = None
+        for intento in range(1, intentos + 1):
+            try:
+                respuesta = self._cliente.models.generate_content(
+                    model=self.modelo,
+                    contents=prompt,
+                    config=self._tipos.GenerateContentConfig(
+                        system_instruction=INSTRUCCION_SISTEMA,
+                        temperature=0.4,      # algo de variedad, sin divagar
+                        max_output_tokens=max_tokens,
+                        candidate_count=1,
+                    ),
+                )
+                texto = (respuesta.text or "").strip()
+                if texto:
+                    if intento > 1:
+                        logger.info("Gemini respondio al intento %d", intento)
+                    self._fallos_seguidos = 0        # cierra el cortacircuitos
+                    return texto
+                ultimo_error = RuntimeError("respuesta vacia")
+            except Exception as exc:
+                ultimo_error = exc
+                if not _es_transitorio(exc):
+                    break
+            if intento < intentos:
+                logger.debug("Gemini fallo (%s); reintento %d/%d",
+                             ultimo_error, intento + 1, intentos)
+
+        # Nunca romper la sesión por un fallo de red o de cuota: el texto base
+        # del JSON ya es correcto por sí solo.
+        self._registrar_fallo()
+        logger.warning("Gemini no respondió tras %d intento(s) (%s); "
+                       "se usa el texto base", intentos, ultimo_error)
+        return None
+
+    # -- cortacircuitos ------------------------------------------------------ #
+
+    def _circuito_abierto(self) -> bool:
+        """True si se dejó de llamar por fallos repetidos.
+
+        Cuando el servicio se cae, cada llamada cuesta `TIMEOUT_S` de espera y
+        ninguna sirve. Sin esto, una serie de 20 repeticiones son 20 esperas
+        inútiles y una cola de redacción que no se vacía nunca. El paciente no
+        lo nota —ve el texto del JSON— pero el hilo se pasa la sesión bloqueado.
+        """
+        if time.monotonic() < self._circuito_hasta:
+            return True
+        if self._circuito_hasta:                     # la pausa acaba de expirar
+            self._circuito_hasta = 0.0
+            self._fallos_seguidos = 0
+            logger.info("Gemini: se reanudan los intentos")
+        return False
+
+    def _registrar_fallo(self) -> None:
+        self._fallos_seguidos += 1
+        if self._fallos_seguidos >= FALLOS_PARA_ABRIR and not self._circuito_hasta:
+            self._circuito_hasta = time.monotonic() + PAUSA_CIRCUITO_S
+            logger.warning(
+                "Gemini: %d fallos seguidos, se deja de llamar durante %.0f s. "
+                "Se seguira usando el texto de knowledge_base/ejercicios.json",
+                self._fallos_seguidos, PAUSA_CIRCUITO_S)
+
+    @property
+    def en_pausa(self) -> bool:
+        """True mientras el cortacircuitos está abierto."""
+        return time.monotonic() < self._circuito_hasta
 
     def redactar_repeticion(self, *, indice: int, etiqueta: str, confianza: float,
                             recomendacion: str, variables: dict[str, float],

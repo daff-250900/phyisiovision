@@ -296,3 +296,91 @@ def test_el_entorno_manda_sobre_el_archivo(tmp_path, monkeypatch) -> None:
 def test_sin_archivo_no_falla(tmp_path) -> None:
     from src.config import cargar_dotenv
     assert cargar_dotenv(tmp_path / "no-existe") == {}
+
+
+# --------------------------------------------------------------------------- #
+# Reintentos y cortacircuitos
+# --------------------------------------------------------------------------- #
+
+class _ClienteIntermitente:
+    """Falla las primeras `fallos` llamadas y luego responde."""
+
+    def __init__(self, fallos: int, texto="Redactado."):
+        self.restantes, self.texto, self.llamadas = fallos, texto, 0
+        self.models = self
+
+    def generate_content(self, *, model, contents, config):
+        self.llamadas += 1
+        if self.restantes > 0:
+            self.restantes -= 1
+            raise RuntimeError("504 DEADLINE_EXCEEDED")
+        return type("R", (), {"text": self.texto})()
+
+
+def _llamar(redactor):
+    return redactor.redactar_repeticion(
+        indice=1, etiqueta="correcto", confianza=0.9, recomendacion="x",
+        variables={"rom_max": 100.0}, lado="right")
+
+
+def test_reintenta_los_fallos_transitorios() -> None:
+    from src.gemini_feedback import INTENTOS
+
+    cliente = _ClienteIntermitente(fallos=INTENTOS - 1)
+    assert _llamar(_redactor(cliente)) == "Redactado."
+    assert cliente.llamadas == INTENTOS
+
+
+def test_no_reintenta_los_errores_permanentes() -> None:
+    """Repetir un 404 o un 429 solo gastaria cuota."""
+    for codigo in ("404 NOT_FOUND", "429 RESOURCE_EXHAUSTED",
+                   "400 INVALID_ARGUMENT"):
+        cliente = _ClienteFalso(excepcion=RuntimeError(codigo))
+        assert _llamar(_redactor(cliente)) is None
+        assert cliente.prompts == [] or len(cliente.prompts) == 1, codigo
+
+
+def test_el_cortacircuitos_deja_de_llamar_tras_fallos_seguidos() -> None:
+    """Con el servicio caido, cada llamada cuesta el plazo entero y no sirve."""
+    from src.gemini_feedback import FALLOS_PARA_ABRIR, INTENTOS
+
+    cliente = _ClienteIntermitente(fallos=10_000)
+    redactor = _redactor(cliente)
+
+    for _ in range(FALLOS_PARA_ABRIR):
+        assert _llamar(redactor) is None
+    llamadas_hasta_abrir = cliente.llamadas
+    assert llamadas_hasta_abrir == FALLOS_PARA_ABRIR * INTENTOS
+    assert redactor.en_pausa
+
+    # Con el circuito abierto ya no se toca la red.
+    for _ in range(5):
+        assert _llamar(redactor) is None
+    assert cliente.llamadas == llamadas_hasta_abrir
+
+
+def test_el_cortacircuitos_se_reabre_al_expirar(monkeypatch) -> None:
+    import src.gemini_feedback as gf
+
+    monkeypatch.setattr(gf, "PAUSA_CIRCUITO_S", 0.05)
+    cliente = _ClienteIntermitente(fallos=gf.FALLOS_PARA_ABRIR * gf.INTENTOS)
+    redactor = _redactor(cliente)
+
+    for _ in range(gf.FALLOS_PARA_ABRIR):
+        _llamar(redactor)
+    assert redactor.en_pausa
+
+    time.sleep(0.1)
+    assert not redactor.en_pausa
+    assert _llamar(redactor) == "Redactado."
+
+
+def test_una_respuesta_correcta_cierra_el_cortacircuitos() -> None:
+    from src.gemini_feedback import FALLOS_PARA_ABRIR
+
+    cliente = _ClienteIntermitente(fallos=1)
+    redactor = _redactor(cliente)
+    assert _llamar(redactor) == "Redactado."
+    assert redactor._fallos_seguidos == 0
+    assert not redactor.en_pausa
+    assert FALLOS_PARA_ABRIR > 0
