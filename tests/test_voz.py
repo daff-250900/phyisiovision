@@ -29,12 +29,43 @@ class _ClienteFalso:
         return type("R", (), {"audio_content": self.audio})()
 
 
-def _sintetizador(tmp_path, cliente: _ClienteFalso | None = None) -> SintetizadorVoz:
+class _ClienteGeminiFalso:
+    """Sustituto del cliente de la API de Gemini en modo voz."""
+
+    def __init__(self, excepcion=None, pcm=b"\x00\x01" * 1200, tasa=24000):
+        self.excepcion, self.pcm, self.tasa = excepcion, pcm, tasa
+        self.peticiones: list[str] = []
+        self.models = self
+
+    def generate_content(self, *, model, contents, config):
+        self.peticiones.append(contents)
+        if self.excepcion:
+            raise self.excepcion
+        parte = type("D", (), {"data": self.pcm,
+                               "mime_type": f"audio/L16;codec=pcm;rate={self.tasa}"})()
+        contenido = type("C", (), {"parts": [type("P", (), {"inline_data": parte})()]})()
+        return type("R", (), {"candidates": [type("Cd", (), {"content": contenido})()]})()
+
+
+def _sintetizador(tmp_path, cliente=None) -> SintetizadorVoz:
+    """Sintetizador con motor Cloud simulado."""
     from google.cloud import texttospeech
 
     v = SintetizadorVoz(directorio=tmp_path, habilitado=False)
     if cliente is not None:
         v._cliente, v._tipos, v._motivo = cliente, texttospeech, ""
+        v._motor_activo = "cloud"
+    return v
+
+
+def _sintetizador_gemini(tmp_path, cliente=None) -> SintetizadorVoz:
+    """Sintetizador con motor Gemini simulado."""
+    from google.genai import types
+
+    v = SintetizadorVoz(directorio=tmp_path, habilitado=False, motor="gemini")
+    if cliente is not None:
+        v._cliente, v._tipos, v._motivo = cliente, types, ""
+        v._motor_activo = "gemini"
     return v
 
 
@@ -101,12 +132,18 @@ def test_la_cache_sirve_aun_sin_credenciales(tmp_path) -> None:
 
 
 def test_cambiar_de_voz_invalida_la_cache(tmp_path) -> None:
-    """Reutilizar el audio anterior con otra voz daría una entonación falsa."""
-    a = SintetizadorVoz(directorio=tmp_path, voz="es-US-Neural2-A", habilitado=False)
-    b = SintetizadorVoz(directorio=tmp_path, voz="es-US-Neural2-B", habilitado=False)
-    c = SintetizadorVoz(directorio=tmp_path, voz="es-US-Neural2-A",
-                        velocidad=1.5, habilitado=False)
-    rutas = {a.ruta_cache("hola"), b.ruta_cache("hola"), c.ruta_cache("hola")}
+    """Reutilizar el audio anterior con otra voz daría una entonación falsa.
+
+    Se fija `motor="cloud"` porque es el que admite elegir voz y velocidad; en
+    el motor de Gemini la clave se compone con su propio modelo y voz.
+    """
+    def crear(**extra):
+        return SintetizadorVoz(directorio=tmp_path, habilitado=False,
+                               motor="cloud", **extra)
+
+    rutas = {crear(voz="es-US-Neural2-A").ruta_cache("hola"),
+             crear(voz="es-US-Neural2-B").ruta_cache("hola"),
+             crear(voz="es-US-Neural2-A", velocidad=1.5).ruta_cache("hola")}
     assert len(rutas) == 3
 
 
@@ -152,6 +189,72 @@ def test_estadisticas(tmp_path) -> None:
     v.sintetizar("dos")
     assert v.estadisticas() == {"sintesis": 2, "aciertos_cache": 1,
                                 "archivos_en_cache": 2}
+
+
+def test_las_estadisticas_cuentan_las_dos_extensiones(tmp_path) -> None:
+    """Cloud escribe .mp3 y Gemini .wav; contar solo una daba cero con la caché
+    llena."""
+    _sintetizador(tmp_path, _ClienteFalso()).sintetizar("desde cloud")
+    _sintetizador_gemini(tmp_path, _ClienteGeminiFalso()).sintetizar("desde gemini")
+    assert len(list(tmp_path.glob("*.mp3"))) == 1
+    assert len(list(tmp_path.glob("*.wav"))) == 1
+    assert _sintetizador(tmp_path).estadisticas()["archivos_en_cache"] == 2
+
+
+# --------------------------------------------------------------------------- #
+# Motor de la API de Gemini
+# --------------------------------------------------------------------------- #
+
+def test_gemini_envuelve_el_pcm_en_wav(tmp_path) -> None:
+    """Gemini devuelve L16 sin cabecera: ningún reproductor lo entiende crudo."""
+    import wave
+
+    cliente = _ClienteGeminiFalso(tasa=24000)
+    ruta = _sintetizador_gemini(tmp_path, cliente).sintetizar("¡Bien hecho!")
+    assert ruta is not None and ruta.suffix == ".wav"
+    with wave.open(str(ruta)) as w:
+        assert w.getnchannels() == 1
+        assert w.getsampwidth() == 2
+        assert w.getframerate() == 24000
+        assert w.getnframes() > 0
+
+
+def test_gemini_lee_la_tasa_del_mime_type(tmp_path) -> None:
+    """El formato del mime type varía entre modelos; no se asume la posición."""
+    from src.voz import _tasa_de
+
+    assert _tasa_de("audio/L16;codec=pcm;rate=24000") == 24000
+    assert _tasa_de("audio/l16; rate=16000; channels=1") == 16000
+    assert _tasa_de("audio/L16") == 24000            # por defecto
+
+
+def test_gemini_no_recibe_prefijo_de_estilo(tmp_path) -> None:
+    """Se envía el texto a pelo: un prefijo podría leerse en voz alta."""
+    cliente = _ClienteGeminiFalso()
+    _sintetizador_gemini(tmp_path, cliente).sintetizar("¡Bien hecho!")
+    assert cliente.peticiones == ["¡Bien hecho!"]
+
+
+def test_gemini_y_cloud_no_comparten_entrada_de_cache(tmp_path) -> None:
+    """Suenan distinto: reutilizar el audio del otro motor engañaría."""
+    a = _sintetizador(tmp_path, _ClienteFalso())
+    b = _sintetizador_gemini(tmp_path, _ClienteGeminiFalso())
+    assert a.ruta_cache("hola") != b.ruta_cache("hola")
+
+
+def test_un_429_se_traduce_en_espera_sugerida(tmp_path) -> None:
+    """El propio error dice cuánto esperar; obedecerlo bate a inventar backoff."""
+    from src.voz import _espera_sugerida
+
+    assert _espera_sugerida("'retryDelay': '31s'") == pytest.approx(32.0)
+    assert _espera_sugerida("Please retry in 29.5s.") == pytest.approx(30.5)
+    assert _espera_sugerida("sin pista") == pytest.approx(20.0)
+
+    cliente = _ClienteGeminiFalso(
+        excepcion=RuntimeError("429 RESOURCE_EXHAUSTED retry in 31.4s"))
+    v = _sintetizador_gemini(tmp_path, cliente)
+    assert v.sintetizar("¡Muy bien!") is None
+    assert v._ultima_espera == pytest.approx(32.4)
 
 
 # --------------------------------------------------------------------------- #
