@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Bloquea commits que contengan credenciales.
+
+Se instala con:
+
+    git config core.hooksPath .githooks
+
+Existe por un incidente concreto: una clave de API real acabó en
+`.env.example` —el archivo que sí se versiona, a un carácter de distancia del
+que no— y viajó en cuatro commits antes de que GitHub la rechazara al subir. A
+esas alturas ya había que reescribir el historial. Este hook avisa antes de
+crear el commit, que es cuando arreglarlo cuesta un `git restore`.
+
+Revisa solo lo que está en el índice, así que es rápido.
+
+Para saltarlo en un caso justificado:
+
+    git commit --no-verify
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+
+#: Formatos de credencial reconocibles por su forma.
+PATRONES = [
+    (r"AIza[0-9A-Za-z_-]{35}", "clave de API de Google"),
+    (r"AQ\.[A-Za-z0-9_-]{30,}", "clave de API de Google Cloud"),
+    (r"ya29\.[0-9A-Za-z_-]{20,}", "token OAuth de Google"),
+    # El JSON de cuenta de servicio va antes que el patrón genérico de clave
+    # privada: los dos aciertan, pero este dice mejor qué archivo es.
+    (r'"private_key"\s*:\s*"-----BEGIN', "JSON de cuenta de servicio"),
+    (r"-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----", "clave privada"),
+    (r"AKIA[0-9A-Z]{16}", "clave de acceso de AWS"),
+    (r"sk-[A-Za-z0-9]{32,}", "clave de API de OpenAI"),
+    (r"gh[pousr]_[A-Za-z0-9]{36,}", "token de GitHub"),
+]
+
+#: Partes de nombre que marcan una variable como sensible. Se comparan por
+#: componente y no por subcadena: buscar "API" dentro del nombre completo daba
+#: un falso positivo con PHYSIOVISION_MEDI-API-PE.
+COMPONENTES_SENSIBLES = {
+    "KEY", "KEYS", "APIKEY", "TOKEN", "TOKENS", "SECRET", "SECRETS",
+    "PASSWORD", "PASSWD", "PASS", "CREDENTIAL", "CREDENTIALS", "AUTH",
+}
+
+ASIGNACION = re.compile(r"^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.+)$")
+
+
+def es_nombre_sensible(nombre: str) -> bool:
+    return any(parte in COMPONENTES_SENSIBLES for parte in nombre.upper().split("_"))
+
+
+#: Archivos que nunca deberían versionarse, por mucho que .gitignore falle.
+RUTAS_PROHIBIDAS = re.compile(r"(^|/)\.env$|(^|/)\.env\.local$|"
+                              r"credenciales.*\.json$|service[-_]account.*\.json$")
+
+#: Marca en línea para excluir una línea concreta. Necesaria para las propias
+#: pruebas del hook, que contienen credenciales falsas a proposito. Se marca por
+#: línea y no por archivo: excluir `tests/` entero dejaria pasar una clave real
+#: que aterrizara en un test.
+PERMITIDO = "secreto-de-prueba"
+
+#: Valores de plantilla que no son secretos aunque rellenen la variable.
+MARCADORES = re.compile(
+    r"^(|<.*>|\.\.\.|tu[-_ ].*|your[-_ ].*|xxx+|cambiame|changeme|"
+    r"pon[-_ ].*|ruta/a/.*|/ruta/.*|path/to/.*)$", re.IGNORECASE)
+
+
+def archivos_en_indice() -> list[str]:
+    salida = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+        capture_output=True, text=True).stdout
+    return [linea for linea in salida.splitlines() if linea.strip()]
+
+
+def contenido_en_indice(ruta: str) -> str:
+    resultado = subprocess.run(["git", "show", f":{ruta}"],
+                               capture_output=True, text=True)
+    return resultado.stdout if resultado.returncode == 0 else ""
+
+
+def revisar(ruta: str, contenido: str) -> list[str]:
+    """Devuelve los problemas encontrados en un archivo del índice."""
+    problemas: list[str] = []
+
+    if RUTAS_PROHIBIDAS.search(ruta):
+        problemas.append(f"{ruta}: este archivo no debe versionarse nunca")
+
+    for numero, linea in enumerate(contenido.splitlines(), start=1):
+        if PERMITIDO in linea:
+            continue
+        for patron, descripcion in PATRONES:
+            if re.search(patron, linea):
+                problemas.append(f"{ruta}:{numero}: {descripcion}")
+                break
+        else:
+            # Una plantilla con un valor relleno en una variable sensible es el
+            # caso que provocó el incidente: .env.example con la clave dentro.
+            if ".example" in ruta or ".template" in ruta or ruta.endswith(".sample"):
+                coincidencia = ASIGNACION.match(linea)
+                if coincidencia and es_nombre_sensible(coincidencia.group(1)):
+                    valor = coincidencia.group(2).strip().strip("'\"")
+                    if not MARCADORES.match(valor):
+                        problemas.append(
+                            f"{ruta}:{numero}: {coincidencia.group(1)} tiene un "
+                            f"valor en una plantilla; déjalo vacío")
+    return problemas
+
+
+def main() -> int:
+    problemas: list[str] = []
+    for ruta in archivos_en_indice():
+        contenido = contenido_en_indice(ruta)
+        if "\x00" in contenido[:1024]:      # binario: nada que revisar
+            continue
+        problemas.extend(revisar(ruta, contenido))
+
+    if not problemas:
+        return 0
+
+    print("\n  COMMIT BLOQUEADO: posibles credenciales en el índice\n",
+          file=sys.stderr)
+    for problema in problemas:
+        print(f"    {problema}", file=sys.stderr)
+    print("\n  Quita el valor y vuelve a añadir el archivo:\n"
+          "      git restore --staged <archivo>   # sacarlo del índice\n"
+          "\n  Si es un falso positivo:\n"
+          "      git commit --no-verify\n", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
