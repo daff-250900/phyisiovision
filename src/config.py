@@ -85,8 +85,14 @@ class Settings:
                                        "gemini-flash-lite-latest")
     gemini_timeout: float = float(os.environ.get("PHYSIOVISION_GEMINI_TIMEOUT", "6"))
 
+    # --- Voz con Google Cloud Text-to-Speech (opcional) ---
+    #: Caché de audio. Las consignas son un conjunto cerrado, así que tras la
+    #: primera síntesis la reproducción es una lectura de archivo.
+    audio_dir: Path = BASE_DIR / "data" / "audio"
+
 
 settings = Settings()
 settings.processed_dir.mkdir(parents=True, exist_ok=True)
 settings.database_path.parent.mkdir(parents=True, exist_ok=True)
 settings.mediapipe_dir.mkdir(parents=True, exist_ok=True)
+settings.audio_dir.mkdir(parents=True, exist_ok=True)

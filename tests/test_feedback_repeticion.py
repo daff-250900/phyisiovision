@@ -22,16 +22,19 @@ from src.sesion_vivo import (
 from ui.callbacks import _feedback_repeticion, procesar_frame
 
 
-def _resultado(label: str = "compensacion_tronco", indice: int = 2
-               ) -> ResultadoRepeticion:
+def _resultado(label: str = "compensacion_tronco", indice: int = 2,
+               feedback: dict | None = None) -> ResultadoRepeticion:
     return ResultadoRepeticion(
         indice=indice, label=label, confidence=0.87,
         probabilities={"correcto": 0.13, label: 0.87},
         source="xgboost",
         variables={"rom_max": 118.4, "tronco_max": 21.3, "duracion_s": 3.2},
-        feedback={
+        feedback=feedback or {
             "status": label,
             "title": "Compensación del tronco",
+            # La consigna corta es lo que se muestra tras cada repetición; el
+            # texto largo se guarda para el resumen de la serie.
+            "cue": "Mantén el torso recto",
             "message": "Mantén el torso vertical y reduce el rango si hace falta.",
             "safety_warning": "La compensación puede indicar fatiga.",
             "confidence": 0.87,
@@ -48,6 +51,7 @@ def _sesion_falsa() -> SesionEnVivo:
     sesion.repeticiones = []
     sesion._aviso = None
     sesion._cerrada = False
+    sesion._voz = sesion._redactor = None
     return sesion
 
 
@@ -99,13 +103,32 @@ def test_texto_del_aviso_es_ascii() -> None:
 # Panel de recomendación
 # --------------------------------------------------------------------------- #
 
-def test_feedback_incluye_recomendacion_y_precaucion() -> None:
+def test_el_feedback_es_una_consigna_corta() -> None:
+    """Quien acaba de moverse no lee un párrafo: necesita una indicación."""
     markdown = _feedback_repeticion(_resultado())
+    titular = markdown.splitlines()[0]
+    assert titular.startswith("#"), "la consigna debe ir como encabezado"
+    assert "Mantén el torso recto" in titular
+    assert len(titular.split()) <= 10, f"titular demasiado largo: {titular}"
+    # El detalle numérico queda en letra pequeña, no compite con la consigna.
     assert "Repetición 2" in markdown
-    assert "Compensación del tronco" in markdown
-    assert "Mantén el torso vertical" in markdown
-    assert "La compensación puede indicar fatiga" in markdown
     assert "87%" in markdown
+
+
+def test_el_elogio_es_breve_cuando_esta_bien() -> None:
+    resultado = _resultado(label="correcto",
+                           feedback={"title": "Ejecución adecuada",
+                                     "cue": "¡Bien hecho!",
+                                     "message": "Conserva el ritmo lento.",
+                                     "safety_warning": "Respeta el rango."})
+    assert "¡Bien hecho!" in _feedback_repeticion(resultado).splitlines()[0]
+
+
+def test_la_consigna_de_gemini_sustituye_a_la_del_json() -> None:
+    resultado = _resultado()
+    assert "Mantén el torso recto" in _feedback_repeticion(resultado)
+    resultado.mensaje_ia = "No inclines el cuerpo"
+    assert "No inclines el cuerpo" in _feedback_repeticion(resultado)
 
 
 def test_feedback_muestra_las_metricas_de_la_repeticion() -> None:
@@ -113,6 +136,14 @@ def test_feedback_muestra_las_metricas_de_la_repeticion() -> None:
     assert "ROM 118°" in markdown
     assert "tronco 21°" in markdown
     assert "3.2 s" in markdown
+
+
+def test_el_rotulo_translitera_la_consigna() -> None:
+    """cv2.putText no dibuja tildes: saldrian como interrogantes."""
+    from src.sesion_vivo import _a_ascii
+    assert _a_ascii("¡Bien hecho!") == "Bien hecho!"
+    assert _a_ascii("Mantén el torso recto") == "Manten el torso recto"
+    assert _a_ascii("Sube más el brazo").isascii()
 
 
 def test_feedback_avisa_cuando_no_hay_modelo() -> None:
@@ -143,7 +174,7 @@ def test_frames_sin_repeticion_no_borran_el_resultado(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (frame, metricas, None))
 
-    _, _, clasificacion, tabla, feedback, _ = procesar_frame(frame, sesion)
+    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
     for salida in (clasificacion, tabla, feedback):
         assert isinstance(salida, type(gr.skip())), (
             "un frame sin repetición debe dejar intacto el resultado anterior")
@@ -161,15 +192,15 @@ def test_frame_con_repeticion_actualiza_todo(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (frame, metricas, resultado))
 
-    _, _, clasificacion, tabla, feedback, _ = procesar_frame(frame, sesion)
+    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
     assert clasificacion == resultado.probabilities
     assert len(tabla) == 1
-    assert "Compensación del tronco" in feedback
+    assert "Mantén el torso recto" in feedback
 
 
 def test_sin_sesion_no_borra_nada() -> None:
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
-    _, _, clasificacion, tabla, feedback, _ = procesar_frame(frame, None)
+    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, None)
     for salida in (clasificacion, tabla, feedback):
         assert isinstance(salida, type(gr.skip()))
 
@@ -180,7 +211,7 @@ def test_error_en_un_frame_no_borra_el_resultado(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (_ for _ in ()).throw(ValueError("boom")))
 
-    _, panel, clasificacion, tabla, feedback, _ = procesar_frame(frame, sesion)
+    _, panel, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
     assert "boom" in panel
     for salida in (clasificacion, tabla, feedback):
         assert isinstance(salida, type(gr.skip()))

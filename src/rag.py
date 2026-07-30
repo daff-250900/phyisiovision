@@ -22,6 +22,21 @@ class KnowledgeBase:
             return result
         return {
             "titulo": "Recomendación general",
+            "consignas": ["Despacio y controlado"],
             "recomendacion": "Realiza el movimiento de forma lenta y controlada.",
             "precaucion": "Detén el ejercicio ante dolor agudo y consulta a un profesional de salud.",
         }
+
+    def consigna(self, exercise_id: str, error_type: str, indice: int = 0) -> str:
+        """Consigna corta para decir en voz alta tras una repetición.
+
+        Se rota entre las disponibles para que una serie de quince repeticiones
+        correctas no repita quince veces la misma palabra.
+        """
+        conocimiento = self.retrieve(exercise_id, error_type)
+        opciones = conocimiento.get("consignas") or []
+        if not opciones:
+            # Base de conocimiento antigua, sin consignas: se recorta la
+            # recomendación larga antes que quedarse sin nada que mostrar.
+            return conocimiento["recomendacion"].split(".")[0].strip()
+        return opciones[indice % len(opciones)]

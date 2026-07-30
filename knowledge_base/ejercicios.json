@@ -4,16 +4,32 @@
     "errores": {
       "rango_insuficiente": {
         "titulo": "Rango de movimiento insuficiente",
+        "consignas": [
+          "Sube más el brazo",
+          "Eleva un poco más",
+          "Busca más recorrido"
+        ],
         "recomendacion": "Eleva el brazo progresivamente y sin impulso. Mantén el codo casi extendido y busca un movimiento controlado dentro del rango indicado por tu terapeuta.",
         "precaucion": "No fuerces el hombro ni continúes si aparece dolor agudo."
       },
       "compensacion_tronco": {
         "titulo": "Compensación del tronco",
+        "consignas": [
+          "Mantén el torso recto",
+          "No inclines el cuerpo",
+          "Activa el abdomen"
+        ],
         "recomendacion": "Mantén el torso vertical, activa suavemente el abdomen y reduce el rango si necesitas inclinarte para elevar el brazo.",
         "precaucion": "La compensación puede indicar fatiga, exceso de carga o rango inadecuado."
       },
       "correcto": {
         "titulo": "Ejecución adecuada",
+        "consignas": [
+          "¡Correcto!",
+          "¡Bien hecho!",
+          "¡Así es!",
+          "¡Muy bien!"
+        ],
         "recomendacion": "Conserva el ritmo lento y controlado, evita elevar el hombro hacia la oreja y mantén una respiración regular.",
         "precaucion": "Respeta siempre el rango y las indicaciones definidas por el profesional de salud."
       }

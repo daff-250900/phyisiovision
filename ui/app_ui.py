@@ -103,6 +103,11 @@ def create_app() -> gr.Blocks:
                     tabla_reps = gr.Dataframe(
                         headers=["#", "Resultado", "Confianza", "ROM"],
                         label="Repeticiones", interactive=False, wrap=True)
+                    # La consigna dicha en voz alta. Quien eleva el brazo mira
+                    # su hombro, no la pantalla: oirla es lo que de verdad se
+                    # parece a tener un fisioterapeuta al lado.
+                    voz = gr.Audio(label="Consigna", autoplay=True,
+                                   interactive=False, visible=True)
 
             resumen = gr.Markdown()
 
@@ -116,17 +121,19 @@ def create_app() -> gr.Blocks:
         boton_iniciar.click(
             fn=iniciar_sesion,
             inputs=[paciente, ejercicio, brazo, sesion],
-            outputs=[sesion, resumen, panel, tabla_reps, clasificacion, feedback],
+            outputs=[sesion, resumen, panel, tabla_reps, clasificacion,
+                     feedback, voz],
         )
         boton_terminar.click(
             fn=terminar_serie,
             inputs=[sesion],
-            outputs=[sesion, resumen, panel, feedback],
+            outputs=[sesion, resumen, panel, feedback, voz],
         )
         camara.stream(
             fn=procesar_frame,
             inputs=[camara, sesion],
-            outputs=[salida, panel, clasificacion, tabla_reps, feedback, sesion],
+            outputs=[salida, panel, clasificacion, tabla_reps, feedback,
+                     voz, sesion],
             stream_every=INTERVALO_STREAM,
             # Cada sesión ocupa un PoseLandmarker y su hilo de inferencia.
             concurrency_limit=4,

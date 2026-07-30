@@ -13,6 +13,11 @@ tqdm>=4.66,<5.0
 # usa los textos de knowledge_base/ejercicios.json y funciona igual.
 google-genai>=1.0,<3.0
 
+# Voz de las consignas. Opcional: sin GOOGLE_APPLICATION_CREDENTIALS la app
+# funciona igual, en silencio. Cloud TTS NO acepta claves de API: necesita una
+# cuenta de servicio, que es un alta distinta de la de Gemini.
+google-cloud-texttospeech>=2.16,<3.0
+
 # Solo para entrenamiento/modelo_xgboost_ex1.ipynb. El notebook funciona sin ellas
 # (usa busqueda aleatoria, importancia por permutacion y etiquetado por CSV).
 # jupyter>=1.0

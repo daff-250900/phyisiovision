@@ -1,7 +1,7 @@
 # Model card — XGBoost Ex1 (elevacion de hombro)
 
 - **Version**: 1.0.0
-- **Creado**: 2026-07-28T20:52:19+00:00
+- **Creado**: 2026-07-29T17:55:34+00:00
 - **Archivo**: `models/xgboost_model.json`
 - **Consumido por**: `src/classifier.py` (`ExerciseClassifier`)
 

@@ -88,24 +88,29 @@ REGLAS INVIOLABLES:
 6. Sin markdown, sin listas, sin emojis, sin comillas. Texto corrido.
 7. Si los datos son contradictorios o insuficientes, limítate a reformular la
    recomendación sin citar números.
-8.Crea un resumen de maximo 6 palabras.
 """
 
 PROMPT_REPETICION = """\
 Repetición {indice} de la serie.
 
-RESULTADO DEL CLASIFICADOR: {etiqueta} (confianza {confianza:.0%})
-MÉTRICAS MEDIDAS:
-- Rango de movimiento alcanzado: {rom_max:.0f} grados
-- Inclinación máxima del tronco: {tronco_max:.0f} grados
-- Duración de la repetición: {duracion_s:.1f} segundos
+RESULTADO: {etiqueta}
+CONTEXTO (para elegir el matiz, NO para citarlo):
+- Rango alcanzado: {rom_max:.0f} grados
+- Inclinación del tronco: {tronco_max:.0f} grados
+- Duración: {duracion_s:.1f} segundos
 - Brazo: {lado}
 
-RECOMENDACION (reformula esto, no la sustituyas):
+CONSIGNA (reformula esto, no la sustituyas):
 {recomendacion}
 
-Escribe UNA sola frase, de 20 a 35 palabras, que le diga cómo le ha salido esta
-repetición y qué ajustar en la siguiente.\
+Devuelve UNA consigna de 2 a 6 palabras, en imperativo, para que la oiga entre
+esta repetición y la siguiente.
+
+Si el RESULTADO es "correcto", devuelve solo un elogio breve: "¡Correcto!",
+"¡Bien hecho!", "¡Así es!" o similar. Nada más.
+
+Si no lo es, di qué corregir en el gesto: "Sube más el brazo", "Mantén el torso
+recto", "Hazlo más lento". Una sola indicación, la más importante.\
 """
 
 PROMPT_RESUMEN = """\

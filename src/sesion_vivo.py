@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,6 +34,7 @@ from src.gemini_feedback import RedactorGemini
 from src.pose_detector import PoseDetector
 from src.rag import KnowledgeBase
 from src.segmentador_online import AcumuladorEnVivo, MetricasInstantaneas
+from src.voz import SintetizadorVoz
 
 FASES_LEGIBLES = {
     "calibrando": "Calibrando…",
@@ -82,6 +84,19 @@ AVISO_POR_CLASE = {
 }
 
 
+def _a_ascii(texto: str) -> str:
+    """Translitera a ASCII para poder pintarlo con `cv2.putText`.
+
+    OpenCV solo dibuja ASCII: una tilde o un signo de apertura salen como
+    interrogante. Las consignas llevan ambos ("¡Bien hecho!", "Mantén el torso
+    recto"), asi que hay que transliterarlas antes de superponerlas. El panel
+    lateral es Markdown y si conserva los acentos.
+    """
+    descompuesto = unicodedata.normalize("NFKD", texto)
+    sin_tildes = "".join(c for c in descompuesto if not unicodedata.combining(c))
+    return sin_tildes.encode("ascii", "ignore").decode("ascii").strip()
+
+
 @dataclass
 class ResultadoRepeticion:
     """Clasificación de una repetición cerrada."""
@@ -93,10 +108,12 @@ class ResultadoRepeticion:
     source: str
     variables: dict[str, float]
     feedback: dict[str, Any]
-    #: Reformulación de Gemini. Llega despues que el resto, por eso es opcional:
-    #: el mensaje base del JSON se muestra de inmediato y este lo sustituye
-    #: cuando esta listo. Si Gemini no responde, se queda en None y no pasa nada.
+    #: Consigna redactada por Gemini. Llega despues que el resto, por eso es
+    #: opcional: la consigna del JSON se muestra de inmediato y esta la sustituye
+    #: cuando esta lista. Si Gemini no responde, se queda en None y no pasa nada.
     mensaje_ia: str | None = None
+    #: Ruta al MP3 de la consigna. Llega despues, como mensaje_ia.
+    audio: str | None = None
 
     @property
     def es_correcta(self) -> bool:
@@ -104,8 +121,14 @@ class ResultadoRepeticion:
 
     @property
     def mensaje(self) -> str:
-        """Texto a mostrar: el de Gemini si llego, si no el del JSON."""
-        return self.mensaje_ia or self.feedback["message"]
+        """Consigna a mostrar: la de Gemini si llego, si no la del JSON.
+
+        Es deliberadamente corta. Quien acaba de hacer una repeticion no lee un
+        parrafo: necesita una indicacion de dos a seis palabras, como la que
+        daria un fisioterapeuta a pie de camilla. El texto largo se reserva para
+        el resumen del final de la serie, que si se lee con calma.
+        """
+        return self.mensaje_ia or self.feedback.get("cue") or self.feedback["message"]
 
 
 @dataclass
@@ -147,6 +170,7 @@ class SesionEnVivo:
     _medicion: list = field(default_factory=list, init=False, repr=False)
     fps_real: float | None = field(default=None, init=False)
     _redactor: RedactorGemini | None = field(default=None, init=False, repr=False)
+    _voz: SintetizadorVoz | None = field(default=None, init=False, repr=False)
     _pool: ThreadPoolExecutor | None = field(default=None, init=False, repr=False)
     _lock_texto: Any = field(default=None, init=False, repr=False)
     _version_texto: int = field(default=0, init=False)
@@ -161,6 +185,7 @@ class SesionEnVivo:
         self._clasificador = ExerciseClassifier()
         self._feedback = FeedbackService(KnowledgeBase())
         self._redactor = RedactorGemini()
+        self._voz = SintetizadorVoz()
         # Un solo hilo por sesion: las redacciones se encolan y no se pisan. Si
         # una repeticion llega antes de que termine la anterior, espera su turno
         # en vez de abrir conexiones en paralelo.
@@ -302,9 +327,9 @@ class SesionEnVivo:
             self._aviso = None
             return frame_bgr
 
-        texto, color = AVISO_POR_CLASE.get(
-            resultado.label, (resultado.label.upper(), (128, 128, 128)))
-        etiqueta = f"REP {resultado.indice}: {texto} ({resultado.confidence:.0%})"
+        _, color = AVISO_POR_CLASE.get(resultado.label,
+                                       (resultado.label, (128, 128, 128)))
+        etiqueta = f"REP {resultado.indice}: {_a_ascii(resultado.mensaje).upper()}"
 
         salida = frame_bgr.copy()
         alto, ancho = salida.shape[:2]
@@ -329,7 +354,8 @@ class SesionEnVivo:
 
     def _clasificar(self, variables: dict[str, float]) -> ResultadoRepeticion:
         prediccion = self._clasificador.predict(variables)
-        feedback = self._feedback.generate(self.ejercicio, prediccion, variables)
+        feedback = self._feedback.generate(self.ejercicio, prediccion, variables,
+                                           indice=len(self.repeticiones))
         resultado = ResultadoRepeticion(
             indice=len(self.repeticiones) + 1,
             label=str(prediccion["label"]),
@@ -355,30 +381,45 @@ class SesionEnVivo:
         El mensaje del JSON se muestra de inmediato; cuando llega el de Gemini,
         `hay_texto_nuevo()` avisa a la interfaz para que lo sustituya.
         """
-        if self._redactor is None or not self._redactor.disponible:
-            return
         if self._pool is None or self._cerrada:
+            return
+        hay_redactor = self._redactor is not None and self._redactor.disponible
+        hay_voz = self._voz is not None and (
+            self._voz.disponible or self._voz.en_cache(resultado.mensaje))
+        if not hay_redactor and not hay_voz:
             return
 
         def tarea() -> None:
-            texto = self._redactor.redactar_repeticion(
+            texto = None if not hay_redactor else self._redactor.redactar_repeticion(
                 indice=resultado.indice,
                 etiqueta=resultado.label,
                 confianza=resultado.confidence,
-                recomendacion=resultado.feedback["message"],
+                recomendacion=resultado.feedback.get(
+                    "cue", resultado.feedback["message"]),
                 variables=resultado.variables,
                 lado=self.lado,
             )
-            if not texto:
+            audio = self._sintetizar(texto or resultado.mensaje)
+            if not texto and not audio:
                 return
             with self._lock_texto:
-                resultado.mensaje_ia = texto
+                if texto:
+                    resultado.mensaje_ia = texto
+                if audio:
+                    resultado.audio = audio
                 self._version_texto += 1
 
         try:
             self._pool.submit(tarea)
         except RuntimeError:
             pass          # el pool ya estaba cerrado: no es un error
+
+    def _sintetizar(self, texto: str) -> str | None:
+        """Audio de la consigna. None si no hay voz configurada o falla."""
+        if self._voz is None or not texto:
+            return None
+        ruta = self._voz.sintetizar(texto)
+        return str(ruta) if ruta else None
 
     def hay_texto_nuevo(self) -> ResultadoRepeticion | None:
         """Devuelve la repetición cuyo texto acaba de mejorarse, o `None`.
@@ -408,6 +449,14 @@ class SesionEnVivo:
     @property
     def usa_gemini(self) -> bool:
         return bool(self._redactor and self._redactor.disponible)
+
+    @property
+    def usa_voz(self) -> bool:
+        return bool(self._voz and self._voz.disponible)
+
+    @property
+    def motivo_sin_voz(self) -> str:
+        return self._voz.motivo_no_disponible if self._voz else ""
 
     @property
     def motivo_sin_gemini(self) -> str:

@@ -1,13 +1,17 @@
+.DS_Store
 __pycache__/
 *.py[cod]
 .venv/
 .env
+.env.example
 data/*.db
 data/uploads/*
 data/processed/*
 data/videos/*
 data/landmarks/
 data/datasets/
+# Cache de audio sintetizado: se regenera solo
+data/audio/
 !data/uploads/.gitkeep
 !data/processed/.gitkeep
 

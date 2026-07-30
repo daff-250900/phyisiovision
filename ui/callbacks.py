@@ -62,10 +62,12 @@ def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
     if not nueva.usa_gemini:
         aviso += (f"\n\n<sub>Mensajes sin redacción de Gemini: "
                   f"{nueva.motivo_sin_gemini}.</sub>")
+    if not nueva.usa_voz:
+        aviso += (f"\n\n<sub>Sesión en silencio: {nueva.motivo_sin_voz}.</sub>")
     return (nueva, aviso, _panel_vacio(),
             pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"]),
             None, "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en "
-            "cuanto completes la primera repetición.")
+            "cuanto completes la primera repetición.", None)
 
 
 def terminar_serie(sesion: SesionEnVivo | None):
@@ -77,7 +79,7 @@ def terminar_serie(sesion: SesionEnVivo | None):
     if resumen["repeticiones"] == 0:
         sesion.cerrar()
         return (None, "No se detectó ninguna repetición completa. Nada que guardar.",
-                _panel_vacio(), "")
+                _panel_vacio(), "", None)
 
     try:
         repository.save_summary(resumen)
@@ -87,8 +89,10 @@ def terminar_serie(sesion: SesionEnVivo | None):
     texto_ia = sesion.redactar_resumen(
         knowledge_base.retrieve(str(resumen["ejercicio"]),
                                 str(resumen["clasificacion"]))["recomendacion"])
+    audio_resumen = sesion._sintetizar(texto_ia or "") if texto_ia else None
     sesion.cerrar()
-    return None, _markdown_resumen(resumen, texto_ia), _panel_vacio(), ""
+    return (None, _markdown_resumen(resumen, texto_ia), _panel_vacio(), "",
+            audio_resumen)
 
 
 def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
@@ -101,28 +105,33 @@ def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
     aparecer y desvanecerse en una décima de segundo.
     """
     if sesion is None:
-        return frame, _panel_inicial(), gr.skip(), gr.skip(), gr.skip(), sesion
+        return (frame, _panel_inicial(), gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), sesion)
     if frame is None:
-        return frame, _panel_vacio(), gr.skip(), gr.skip(), gr.skip(), sesion
+        return (frame, _panel_vacio(), gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), sesion)
 
     try:
         anotado, metricas, resultado = sesion.procesar(frame)
     except Exception as exc:
         return (frame, f"### Error\n\n`{exc}`",
-                gr.skip(), gr.skip(), gr.skip(), sesion)
+                gr.skip(), gr.skip(), gr.skip(), gr.skip(), sesion)
 
     panel = _panel_metricas(metricas, sesion)
     if resultado is None:
-        # La redacción de Gemini llega unos segundos después de la repetición.
-        # Este es el punto donde ese resultado asíncrono entra en pantalla.
+        # La redacción de Gemini y el audio llegan unos segundos después de la
+        # repetición. Este es el punto donde esos resultados asíncronos entran
+        # en pantalla y en los altavoces.
         mejorado = sesion.hay_texto_nuevo()
         if mejorado is not None:
             return (anotado, panel, gr.skip(), gr.skip(),
-                    _feedback_repeticion(mejorado), sesion)
-        return anotado, panel, gr.skip(), gr.skip(), gr.skip(), sesion
+                    _feedback_repeticion(mejorado), mejorado.audio, sesion)
+        return (anotado, panel, gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), sesion)
 
     return (anotado, panel, resultado.probabilities,
-            _tabla_repeticiones(sesion), _feedback_repeticion(resultado), sesion)
+            _tabla_repeticiones(sesion), _feedback_repeticion(resultado),
+            resultado.audio or gr.skip(), sesion)
 
 
 # --------------------------------------------------------------------------- #
@@ -172,31 +181,27 @@ _ICONO = {"correcto": "✅", "rango_insuficiente": "⚠️", "compensacion_tronc
 
 
 def _feedback_repeticion(resultado) -> str:
-    """Recomendación de la base de conocimiento para la repetición recién cerrada.
+    """Consigna de la repetición recién cerrada.
 
-    Es el contenido que `SesionEnVivo` ya venía calculando por repetición y que
-    hasta ahora solo se mostraba al terminar la serie entera.
+    La consigna manda visualmente y el resto es letra pequeña: quien acaba de
+    hacer la repetición tiene un par de segundos antes de la siguiente, no los
+    suficientes para leer un párrafo. La recomendación larga y la precaución se
+    reservan para el resumen del final de la serie.
     """
-    conocimiento = resultado.feedback
     icono = _ICONO.get(resultado.label, "•")
     variables = resultado.variables
     detalle = " · ".join(filter(None, [
         f"ROM {variables['rom_max']:.0f}°" if "rom_max" in variables else "",
         f"tronco {variables['tronco_max']:.0f}°" if "tronco_max" in variables else "",
         f"{variables['duracion_s']:.1f} s" if "duracion_s" in variables else "",
+        f"confianza {resultado.confidence:.0%}",
     ]))
-    aviso_reglas = ("\n\n<sub>Clasificación por reglas biomecánicas, sin modelo "
+    aviso_reglas = ("  \n<sub>Clasificación por reglas biomecánicas, sin modelo "
                     "entrenado.</sub>" if resultado.source == "reglas" else "")
 
     return (
-        f"### {icono} Repetición {resultado.indice} — {conocimiento['title']}\n\n"
-        f"**{resultado.label}** · confianza {resultado.confidence:.0%}  \n"
-        f"<sub>{detalle}</sub>\n\n"
-        # resultado.mensaje devuelve el texto de Gemini si ya llegó, y si no el
-        # del JSON. La advertencia de seguridad va siempre literal del JSON:
-        # es lo único que no se reformula.
-        f"{resultado.mensaje}\n\n"
-        f"> **Precaución:** {conocimiento['safety_warning']}"
+        f"# {icono} {resultado.mensaje}\n\n"
+        f"<sub>Repetición {resultado.indice} · {detalle}</sub>"
         f"{aviso_reglas}"
     )
 
