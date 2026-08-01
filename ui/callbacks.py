@@ -12,6 +12,7 @@ from matplotlib.figure import Figure
 from src.rag import KnowledgeBase
 from src.sesion_vivo import FASES_LEGIBLES, SesionEnVivo
 from src.storage import SessionRepository
+from ui import paneles, vistas
 
 # Estos dos objetos sí pueden compartirse: son de solo lectura y no guardan
 # estado por usuario. El `PoseLandmarker`, en cambio, vive dentro de cada
@@ -64,10 +65,18 @@ def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
                   f"{nueva.motivo_sin_gemini}.</sub>")
     if not nueva.usa_voz:
         aviso += (f"\n\n<sub>Sesión en silencio: {nueva.motivo_sin_voz}.</sub>")
-    return (nueva, aviso, _panel_vacio(),
+    return (nueva, aviso,
+            paneles.panel_vivo(nueva._metricas_sin_pose(), nueva,
+                               _objetivos(nueva.ejercicio)),
+            paneles.superposicion(nueva._metricas_sin_pose(), nueva),
+            paneles.estado_vacio(), paneles.pastillas(nueva),
             pd.DataFrame(columns=["#", "Resultado", "Confianza", "ROM"]),
-            None, "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en "
-            "cuanto completes la primera repetición.", None)
+            "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en "
+            "cuanto completes la primera repetición.", None,
+            paneles.cabecera(nueva, _legible(ejercicio)),
+            paneles.cronometro(nueva),
+            gr.update(visible=False), gr.update(visible=True),
+            gr.update(elem_classes=BOTON_PAUSA))
 
 
 def terminar_serie(sesion: SesionEnVivo | None):
@@ -78,8 +87,8 @@ def terminar_serie(sesion: SesionEnVivo | None):
     resumen = sesion.resumen()
     if resumen["repeticiones"] == 0:
         sesion.cerrar()
-        return (None, "No se detectó ninguna repetición completa. Nada que guardar.",
-                _panel_vacio(), "", None)
+        return _fin_de_sesion(
+            "No se detectó ninguna repetición completa. Nada que guardar.")
 
     try:
         repository.save_summary(resumen)
@@ -91,8 +100,8 @@ def terminar_serie(sesion: SesionEnVivo | None):
                                 str(resumen["clasificacion"]))["recomendacion"])
     audio_resumen = sesion._sintetizar(texto_ia or "") if texto_ia else None
     sesion.cerrar()
-    return (None, _markdown_resumen(resumen, texto_ia), _panel_vacio(), "",
-            audio_resumen)
+    return _fin_de_sesion(_markdown_resumen(resumen, texto_ia),
+                          audio=audio_resumen)
 
 
 def cerrar_sesion(sesion: SesionEnVivo | None):
@@ -104,9 +113,7 @@ def cerrar_sesion(sesion: SesionEnVivo | None):
     """
     if sesion is not None:
         sesion.cerrar()
-    return (None, "", _panel_inicial(),
-            "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en cuanto "
-            "completes la primera repetición.", None)
+    return _fin_de_sesion("")
 
 
 def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
@@ -118,34 +125,92 @@ def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
     `None`, se borraría en el frame siguiente y el paciente vería su resultado
     aparecer y desvanecerse en una décima de segundo.
     """
-    if sesion is None:
-        return (frame, _panel_inicial(), gr.skip(), gr.skip(), gr.skip(),
-                gr.skip(), sesion)
-    if frame is None:
-        return (frame, _panel_vacio(), gr.skip(), gr.skip(), gr.skip(),
-                gr.skip(), sesion)
+    if sesion is None or frame is None:
+        return ((frame,) + (gr.skip(),) * 7 + (sesion,))
 
     try:
         anotado, metricas, resultado = sesion.procesar(frame)
     except Exception as exc:
-        return (frame, f"### Error\n\n`{exc}`",
-                gr.skip(), gr.skip(), gr.skip(), gr.skip(), sesion)
+        return (frame, f'<div class="pv-error">Error: {exc}</div>',
+                gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), sesion)
 
-    panel = _panel_metricas(metricas, sesion)
+    panel = paneles.panel_vivo(metricas, sesion, _objetivos(sesion.ejercicio))
+    # La superposición solo se reenvía cuando cambia algo suyo: reenviarla en
+    # cada frame sería tráfico y trabajo de render para el mismo HTML.
+    firma = paneles.firma_superposicion(metricas, sesion)
+    if firma != getattr(sesion, "_ui_firma_overlay", None):
+        sesion._ui_firma_overlay = firma
+        overlay = paneles.superposicion(metricas, sesion)
+    else:
+        overlay = gr.skip()
+
     if resultado is None:
         # La redacción de Gemini y el audio llegan unos segundos después de la
         # repetición. Este es el punto donde esos resultados asíncronos entran
         # en pantalla y en los altavoces.
         mejorado = sesion.hay_texto_nuevo()
         if mejorado is not None:
-            return (anotado, panel, gr.skip(), gr.skip(),
-                    _feedback_repeticion(mejorado), mejorado.audio, sesion)
-        return (anotado, panel, gr.skip(), gr.skip(), gr.skip(),
-                gr.skip(), sesion)
+            return (anotado, panel, overlay,
+                    paneles.tarjeta_estado(mejorado, _titulo(sesion, mejorado)),
+                    gr.skip(), gr.skip(), _feedback_repeticion(mejorado),
+                    mejorado.audio, sesion)
+        return (anotado, panel, overlay, gr.skip(), gr.skip(), gr.skip(),
+                gr.skip(), gr.skip(), sesion)
 
-    return (anotado, panel, resultado.probabilities,
-            _tabla_repeticiones(sesion), _feedback_repeticion(resultado),
-            resultado.audio or gr.skip(), sesion)
+    return (anotado, panel, paneles.superposicion(metricas, sesion),
+            paneles.tarjeta_estado(resultado, _titulo(sesion, resultado)),
+            paneles.pastillas(sesion), _tabla_repeticiones(sesion),
+            _feedback_repeticion(resultado), resultado.audio or gr.skip(),
+            sesion)
+
+
+def alternar_pausa(sesion: SesionEnVivo | None):
+    """Pausa o reanuda. Reanudar descarta la repetición a medio hacer."""
+    if sesion is None:
+        raise gr.Error("No hay ninguna sesión activa.")
+    if sesion.en_pausa:
+        sesion.reanudar()
+    else:
+        sesion.pausar()
+    clases = BOTON_REANUDAR if sesion.en_pausa else BOTON_PAUSA
+    return sesion, paneles.cronometro(sesion), gr.update(elem_classes=clases)
+
+
+def tic_cronometro(sesion: SesionEnVivo | None):
+    """Refresco del reloj, una vez por segundo. No pasa por el vídeo."""
+    if sesion is None:
+        return gr.skip()
+    return paneles.cronometro(sesion)
+
+
+def _fin_de_sesion(resumen: str, audio=None) -> tuple:
+    """Salidas comunes a terminar y salir: la interfaz vuelve al inicio."""
+    return (None, resumen, "", "", paneles.estado_vacio(), "",
+            "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en cuanto "
+            "completes la primera repetición.", audio,
+            "", paneles.cronometro_vacio(),
+            gr.update(visible=True), gr.update(visible=False),
+            gr.update(elem_classes=BOTON_PAUSA))
+
+
+def _objetivos(ejercicio: str) -> dict[str, list[float]]:
+    return knowledge_base.objetivos(ejercicio)
+
+
+def _legible(ejercicio: str) -> str:
+    return knowledge_base.data.get(ejercicio, {}).get("descripcion", ejercicio)
+
+
+def _titulo(sesion: SesionEnVivo, resultado) -> str:
+    """Título de la clase, tal como lo llama la base de conocimiento."""
+    return knowledge_base.retrieve(sesion.ejercicio, resultado.label).get(
+        "titulo", resultado.label)
+
+
+#: Clases del botón de pausa en sus dos estados. El icono lo pone el CSS.
+BOTON_PAUSA = ["pv-icono", "pv-ico--pausa"]
+BOTON_REANUDAR = ["pv-icono", "pv-ico--reanudar"]
 
 
 # --------------------------------------------------------------------------- #
@@ -245,6 +310,40 @@ def _markdown_resumen(resumen: dict[str, Any], texto_ia: str | None = None) -> s
         f"> **Precaución:** {conocimiento['precaucion']}"
         f"{aviso_fuente}{aviso_cobertura}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Vistas secundarias (IU-6)
+# --------------------------------------------------------------------------- #
+
+def listar_pacientes():
+    """Tabla de pacientes con su actividad. Aguanta la base de datos vacía."""
+    datos = vistas.tabla_pacientes(repository)
+    return datos, vistas.resumen_pacientes(datos)
+
+
+def estado_del_sistema() -> str:
+    """Comprueba de verdad qué servicios están disponibles ahora mismo."""
+    return vistas.estado_del_sistema()
+
+
+def abrir_historial_paciente(datos, evento: gr.SelectData):
+    """Al elegir una fila de Pacientes, salta a su historial ya cargado."""
+    fila = int(evento.index[0]) if evento.index else 0
+    nombre = ""
+    if isinstance(datos, pd.DataFrame) and 0 <= fila < len(datos):
+        nombre = str(datos.iloc[fila, 0])
+
+    tabla, figura = (cargar_historial(nombre) if nombre.strip()
+                     else (pd.DataFrame(columns=COLUMNAS_HISTORIAL), None))
+    # Las últimas salidas son la pestaña y los botones de la tira lateral: la
+    # entrada activa tiene que moverse con la navegación. El import va aquí
+    # dentro porque `ui.app_ui` importa este módulo: al nivel del módulo sería
+    # un ciclo.
+    from ui.app_ui import NAV, _clases_nav
+    navegacion = [gr.update(elem_classes=_clases_nav(clave, "historial"))
+                  for clave, _ in NAV]
+    return [nombre, tabla, figura, gr.Tabs(selected="historial")] + navegacion
 
 
 # --------------------------------------------------------------------------- #

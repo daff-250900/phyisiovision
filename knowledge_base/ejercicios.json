@@ -33,6 +33,22 @@
         "recomendacion": "Conserva el ritmo lento y controlado, evita elevar el hombro hacia la oreja y mantén una respiración regular.",
         "precaucion": "Respeta siempre el rango y las indicaciones definidas por el profesional de salud."
       }
-    }
+    },
+    "objetivos": {
+      "rom": [
+        88,
+        180
+      ],
+      "tronco": [
+        0,
+        13
+      ],
+      "duracion_s": [
+        3.3,
+        8.1
+      ],
+      "fuente": "percentiles 10-90 de las repeticiones etiquetadas como correctas (n=93, vista frontal, data/datasets/ex1_repeticiones.csv); el maximo de rango es el limite anatomico de la elevacion lateral. No son objetivos clinicos: son el comportamiento observado en este dataset."
+    },
+    "repeticiones_objetivo": 5
   }
 }

@@ -41,6 +41,8 @@ FASES_LEGIBLES = {
     "reposo": "En reposo",
     "subiendo": "Subiendo",
     "bajando": "Bajando",
+    "en pausa": "En pausa",
+    "sin persona": "Sin persona",
 }
 
 #: Segundos que el aviso de la última repetición permanece sobre la imagen.
@@ -176,6 +178,16 @@ class SesionEnVivo:
     _version_texto: int = field(default=0, init=False)
     _version_emitida: int = field(default=0, init=False)
     _cerrada: bool = field(default=False, init=False)
+    #: Repeticiones que componen la serie. 0 = serie abierta (la termina el
+    #: usuario). Se rellena desde la base de conocimiento en __post_init__.
+    repeticiones_objetivo: int = 0
+    _inicio: float = field(default_factory=time.monotonic, init=False)
+    _pausada: bool = field(default=False, init=False)
+    _pausa_desde: float | None = field(default=None, init=False)
+    _segundos_en_pausa: float = field(default=0.0, init=False)
+    #: Caché de la interfaz: firma de la última superposición enviada, para
+    #: no reenviar el mismo HTML en cada frame. Ver `ui/paneles.py`.
+    _ui_firma_overlay: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._detector = PoseDetector(modo=self.modo_deteccion, dibujar=True)
@@ -183,7 +195,11 @@ class SesionEnVivo:
         # _medir_fps(). Hasta entonces los frames se guardan en _medicion.
         self._acumulador = None
         self._clasificador = ExerciseClassifier()
-        self._feedback = FeedbackService(KnowledgeBase())
+        conocimiento = KnowledgeBase()
+        self._feedback = FeedbackService(conocimiento)
+        if not self.repeticiones_objetivo:
+            self.repeticiones_objetivo = conocimiento.repeticiones_objetivo(
+                self.ejercicio)
         self._redactor = RedactorGemini()
         self._voz = SintetizadorVoz()
         # Un solo hilo por sesion: las redacciones se encolan y no se pisan. Si
@@ -192,6 +208,57 @@ class SesionEnVivo:
         self._pool = ThreadPoolExecutor(max_workers=1,
                                         thread_name_prefix="gemini")
         self._lock_texto = threading.Lock()
+        # El cronómetro arranca aquí y no al crear el objeto: cargar MediaPipe y
+        # los clientes de voz cuesta unos segundos, y ese rato no es tiempo de
+        # ejercicio del paciente.
+        self._inicio = time.monotonic()
+
+    # -- pausa y cronómetro --------------------------------------------------- #
+
+    @property
+    def en_pausa(self) -> bool:
+        return self._pausada
+
+    @property
+    def segundos_activos(self) -> float:
+        """Tiempo de sesión sin contar las pausas."""
+        parado = self._segundos_en_pausa
+        if self._pausada and self._pausa_desde is not None:
+            parado += time.monotonic() - self._pausa_desde
+        return max(0.0, time.monotonic() - self._inicio - parado)
+
+    def pausar(self) -> None:
+        if self._pausada or self._cerrada:
+            return
+        self._pausada = True
+        self._pausa_desde = time.monotonic()
+
+    def reanudar(self) -> None:
+        """Reanuda descartando la repetición a medio hacer.
+
+        Entre la pausa y la reanudación hay un salto de tiempo real que el
+        acumulador no ve: sus variables (`duracion_s`, `vel_pico`,
+        `suavidad_ldlj`) se calculan asumiendo muestreo uniforme, así que una
+        repetición a caballo del hueco saldría con números inventados. Se
+        reinicia el acumulador conservando el lado ya decidido, para no repetir
+        la calibración; las repeticiones ya cerradas no se tocan.
+        """
+        if not self._pausada:
+            return
+        if self._pausa_desde is not None:
+            self._segundos_en_pausa += time.monotonic() - self._pausa_desde
+        self._pausada = False
+        self._pausa_desde = None
+        if self._acumulador is not None:
+            self._acumulador = AcumuladorEnVivo(fps=self._acumulador.fps,
+                                                lado=self._acumulador.lado)
+
+    def _metricas_en_pausa(self) -> MetricasInstantaneas:
+        return MetricasInstantaneas(
+            abduccion=float("nan"), inclinacion_tronco=float("nan"),
+            fase="en pausa", repeticiones=len(self.repeticiones),
+            lado=self.lado, calibrando=False,
+        )
 
     # -- medición de la tasa de frames --------------------------------------- #
 
@@ -261,6 +328,11 @@ class SesionEnVivo:
             raise RuntimeError("La sesión ya fue cerrada.")
         if frame_rgb is None or getattr(frame_rgb, "size", 0) == 0:
             raise ValueError("Frame vacío.")
+
+        # En pausa el frame se devuelve tal cual: no entra al detector ni al
+        # acumulador, así el hueco temporal no contamina ninguna repetición.
+        if self._pausada:
+            return frame_rgb, self._metricas_en_pausa(), None
 
         self.frames_vistos += 1
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)

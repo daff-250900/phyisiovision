@@ -46,14 +46,22 @@ TRAZOS: dict[str, str] = {
              "<path d='M11.6 17.4h.01'/>",
     "salir": "<path d='M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4'/>"
              "<path d='M9 16l4-4-4-4'/><path d='M13 12H3'/>",
-    "plegar": "<rect x='3' y='4' width='18' height='16' rx='2.5'/>"
-              "<path d='M9.5 4v16'/>",
+    # Doble flecha: apunta hacia donde se va la barra. Con la tira plegada, el
+    # CSS la gira 180 grados y entonces apunta a la vuelta.
+    "plegar": "<path d='m6.5 7 5 5-5 5'/><path d='m13 7 5 5-5 5'/>",
     "claro": "<circle cx='12' cy='12' r='4'/>"
              "<path d='M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M5.1 5.1l1.6 1.6"
              "M17.3 17.3l1.6 1.6M18.9 5.1l-1.6 1.6M6.7 17.3l-1.6 1.6'/>",
     "oscuro": "<path d='M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1z'/>",
     "iniciar": "<path d='M7.5 4.8 19 12 7.5 19.2z'/>",
     "terminar": "<rect x='6.5' y='6.5' width='11' height='11' rx='2'/>",
+    "pausa": "<path d='M9 5v14M15 5v14'/>",
+    "reanudar": "<path d='M8 5.2 18.5 12 8 18.8z'/>",
+    "reloj": "<circle cx='12' cy='12' r='8.6'/><path d='M12 7.2V12l3.2 1.9'/>",
+    "pantalla": "<path d='M8.5 3.5H5a1.5 1.5 0 0 0-1.5 1.5v3.5'/>"
+                "<path d='M15.5 3.5H19A1.5 1.5 0 0 1 20.5 5v3.5'/>"
+                "<path d='M8.5 20.5H5A1.5 1.5 0 0 1 3.5 19v-3.5'/>"
+                "<path d='M15.5 20.5H19a1.5 1.5 0 0 0 1.5-1.5v-3.5'/>",
     # El logotipo es una figura corriendo, como en la maqueta. Va con trazo mas
     # grueso porque se dibuja a 26 px y con 1.8 se veria anemico.
     "logo": "<circle cx='14.5' cy='4.6' r='2.1' fill='black' stroke='none'/>"

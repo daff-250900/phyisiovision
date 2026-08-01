@@ -174,8 +174,9 @@ def test_frames_sin_repeticion_no_borran_el_resultado(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (frame, metricas, None))
 
-    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
-    for salida in (clasificacion, tabla, feedback):
+    (_, _, _, estado, serie, tabla, feedback, _audio,
+     _) = procesar_frame(frame, sesion)
+    for salida in (estado, serie, tabla, feedback):
         assert isinstance(salida, type(gr.skip())), (
             "un frame sin repetición debe dejar intacto el resultado anterior")
 
@@ -192,16 +193,19 @@ def test_frame_con_repeticion_actualiza_todo(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (frame, metricas, resultado))
 
-    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
-    assert clasificacion == resultado.probabilities
+    (_, panel, overlay, estado, serie, tabla, feedback, _audio,
+     _) = procesar_frame(frame, sesion)
+    assert "Compensación" in estado or "compensacion" in estado
+    assert "REP" in overlay and "pv-tile" in panel
+    assert "pv-pastilla" in serie
     assert len(tabla) == 1
     assert "Mantén el torso recto" in feedback
 
 
 def test_sin_sesion_no_borra_nada() -> None:
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
-    _, _, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, None)
-    for salida in (clasificacion, tabla, feedback):
+    salidas = procesar_frame(frame, None)
+    for salida in salidas[1:-1]:
         assert isinstance(salida, type(gr.skip()))
 
 
@@ -211,9 +215,10 @@ def test_error_en_un_frame_no_borra_el_resultado(monkeypatch) -> None:
     monkeypatch.setattr(SesionEnVivo, "procesar",
                         lambda self, f: (_ for _ in ()).throw(ValueError("boom")))
 
-    _, panel, clasificacion, tabla, feedback, _audio, _ = procesar_frame(frame, sesion)
+    (_, panel, overlay, estado, serie, tabla, feedback, _audio,
+     _) = procesar_frame(frame, sesion)
     assert "boom" in panel
-    for salida in (clasificacion, tabla, feedback):
+    for salida in (overlay, estado, serie, tabla, feedback):
         assert isinstance(salida, type(gr.skip()))
 
 

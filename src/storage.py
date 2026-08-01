@@ -81,6 +81,30 @@ class SessionRepository:
             )
             return int(cursor.lastrowid)
 
+    def list_patients(self, limit: int = 200) -> list[dict[str, object]]:
+        """Un registro por paciente, con su actividad acumulada.
+
+        Se agrupa por nombre en minúsculas porque es lo mismo que hace
+        `get_patient_history` al buscar: si no, "Dafne" y "dafne" saldrían como
+        dos personas en la lista y como una sola en el historial.
+        """
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT patient_name AS paciente,
+                       COUNT(*) AS series,
+                       MAX(created_at) AS ultima,
+                       SUM(repetitions) AS repeticiones,
+                       SUM(correctas) AS correctas
+                FROM sessions
+                GROUP BY lower(patient_name)
+                ORDER BY ultima DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_patient_history(self, patient_name: str, limit: int = 50) -> list[dict[str, object]]:
         with self._connect() as connection:
             rows = connection.execute(
