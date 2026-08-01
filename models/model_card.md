@@ -1,7 +1,7 @@
 # Model card — XGBoost Ex1 (elevacion de hombro)
 
 - **Version**: 1.0.0
-- **Creado**: 2026-07-29T17:55:34+00:00
+- **Creado**: 2026-08-01T02:24:17+00:00
 - **Archivo**: `models/xgboost_model.json`
 - **Consumido por**: `src/classifier.py` (`ExerciseClassifier`)
 
@@ -11,7 +11,7 @@ Clasifica **una repeticion** del ejercicio Ex1 en tres categorias:
 `rango_insuficiente`, `correcto`, `compensacion_tronco`.
 
 No evalua videos completos: la app debe segmentar en repeticiones y agregar
-(ver `predecir_video()` en el notebook, seccion 13.4).
+(ver `consumo_modelo_gradio_ex1.ipynb`, seccion 4).
 
 ## Datos de entrenamiento
 
@@ -19,7 +19,7 @@ No evalua videos completos: la app debe segmentar en repeticiones y agregar
 - Fuente: `data/videos/Ex1`, dos camaras sincronizadas (frontal y lateral)
 - Landmarks: MediaPipe `pose_landmarker_heavy.task`, coordenadas **world** (metros)
 - Distribucion de clases: {'correcto': 186, 'compensacion_tronco': 134, 'rango_insuficiente': 14}
-- **Etiquetado**: `reglas_automaticas` — 0/167 gestos revisados a mano
+- **Etiquetado**: `manual_revisado` — 167/167 gestos revisados a mano
 
 ## Evaluacion
 
@@ -34,10 +34,12 @@ Validacion **Leave-One-Subject-Out** (13 folds). Metricas out-of-fold:
 
 Baseline de reglas (`src/classifier.py`): macro-F1 0.629.
 
+Random Forest optimizado con el mismo protocolo (seccion 11.1): macro-F1 0.812.
+
 ## Limitaciones
 
 - **13 sujetos.** Muestra pequena; los intervalos de confianza son anchos.
-- **Etiquetas generadas por reglas.** El modelo reaprende un arbol de dos umbrales; las metricas NO miden capacidad clinica.
+- Etiquetado por un unico anotador sin medida de acuerdo inter-observador.
 - **Un solo ejercicio** (Ex1) y un solo protocolo de grabacion.
 - **Cambio de dominio**: entrenado con camaras fijas de laboratorio; la app recibe
   video de movil. El rendimiento en produccion sera menor.

@@ -1,7 +1,350 @@
+/* PhysioVision — hoja de estilos de la interfaz.
+ *
+ * Las variables `--pv-*` NO se definen aquí: las genera `ui/tema.py` y se
+ * inyectan antes que este archivo (ver `app.py`). Aquí solo hay reglas que las
+ * consumen, para que cambiar un color sea tocar un único sitio.
+ *
+ * Los dos interruptores de la interfaz son clases en el `body`:
+ *   body.dark        -> modo oscuro (lo pone Gradio y lo alterna nuestro botón)
+ *   body.pv-plegada  -> barra lateral reducida a tira de iconos
+ */
+
+/* --------------------------------------------------------------------------
+ * 1. Contenedor de Gradio
+ * ----------------------------------------------------------------------- */
+
 .gradio-container {
-    max-width: 1180px !important;
-    margin: 0 auto;
+    max-width: 100% !important;
+    padding: 0 !important;
+    background: var(--pv-fondo);
 }
+
+.gradio-container > .main,
+.gradio-container .wrap > .contain {
+    padding: 0 !important;
+    gap: 0 !important;
+}
+
 footer {
     display: none !important;
+}
+
+/* La barra de pestañas se oculta: quien navega es la tira lateral. Las
+ * pestañas se conservan porque son las que sostienen el enrutado. */
+.pv-tabs .tab-wrapper,
+.pv-tabs .tab-container {
+    display: none !important;
+}
+
+.pv-tabs,
+.pv-tabs > div {
+    border: 0 !important;
+    background: transparent !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 2. Cabecera
+ * ----------------------------------------------------------------------- */
+
+.pv-header {
+    align-items: center !important;
+    gap: 18px !important;
+    padding: 12px 20px !important;
+    background: var(--pv-superficie);
+    border-bottom: 1px solid var(--pv-borde);
+    flex-wrap: nowrap !important;
+}
+
+.pv-marca {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--pv-texto);
+    white-space: nowrap;
+}
+
+.pv-marca .pv-marca__ico {
+    width: 26px;
+    height: 26px;
+    background-color: var(--pv-acento);
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.pv-marca em {
+    color: var(--pv-acento);
+    font-style: normal;
+}
+
+/* --------------------------------------------------------------------------
+ * 3. Cuerpo: tira lateral + contenido
+ * ----------------------------------------------------------------------- */
+
+.pv-body {
+    align-items: stretch !important;
+    gap: 0 !important;
+    flex-wrap: nowrap !important;
+    min-height: calc(100vh - 132px);
+}
+
+.pv-rail {
+    flex: 0 0 236px !important;
+    width: 236px !important;
+    min-width: 0 !important;
+    gap: 2px !important;
+    padding: 16px 12px !important;
+    background: var(--pv-superficie);
+    border-right: 1px solid var(--pv-borde);
+    transition: flex-basis .16s ease, width .16s ease, padding .16s ease;
+    overflow: hidden;
+}
+
+body.pv-plegada .pv-rail {
+    flex: 0 0 68px !important;
+    width: 68px !important;
+    padding: 16px 8px !important;
+}
+
+.pv-lema {
+    color: var(--pv-texto-tenue);
+    font-size: 12.5px;
+    line-height: 1.45;
+    padding: 0 10px 12px;
+}
+
+body.pv-plegada .pv-lema,
+body.pv-plegada .pv-descargo {
+    display: none !important;
+}
+
+.pv-main {
+    padding: 16px 20px !important;
+    gap: 14px !important;
+    min-width: 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 4. Entradas de navegación
+ * ----------------------------------------------------------------------- */
+
+.pv-nav,
+.pv-nav button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    width: 100% !important;
+    padding: 10px 12px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--pv-texto-tenue) !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    white-space: nowrap;
+    min-width: 0 !important;
+}
+
+.pv-nav::before,
+.pv-nav button::before {
+    content: "";
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.pv-nav:hover,
+.pv-nav button:hover {
+    background: var(--pv-superficie-2) !important;
+    color: var(--pv-texto) !important;
+}
+
+.pv-nav--activo,
+.pv-nav--activo button {
+    background: var(--pv-acento-suave) !important;
+    color: var(--pv-acento) !important;
+    font-weight: 600 !important;
+    box-shadow: inset 3px 0 0 0 var(--pv-acento) !important;
+}
+
+body.pv-plegada .pv-nav,
+body.pv-plegada .pv-nav button {
+    justify-content: center !important;
+    gap: 0 !important;
+    padding: 11px 0 !important;
+    font-size: 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 5. Botones de icono (tema, pliegue)
+ * ----------------------------------------------------------------------- */
+
+.pv-icono,
+.pv-icono button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+    border: 1px solid var(--pv-borde) !important;
+    background: var(--pv-superficie) !important;
+    color: var(--pv-texto-tenue) !important;
+    font-size: 0 !important;
+    flex: 0 0 38px !important;
+}
+
+.pv-icono::before,
+.pv-icono button::before {
+    content: "";
+    width: 19px;
+    height: 19px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.pv-icono:hover,
+.pv-icono button:hover {
+    color: var(--pv-texto) !important;
+    background: var(--pv-superficie-2) !important;
+}
+
+/* El botón de tema no cambia de clase al pulsarlo —lo hace el `body`—, así que
+ * sus dos iconos entran por variable. Enseña a dónde lleva, no dónde estás:
+ * en claro ofrece la luna, en oscuro el sol. */
+.pv-tema::before {
+    -webkit-mask-image: var(--pv-ico-oscuro);
+    mask-image: var(--pv-ico-oscuro);
+}
+
+body.dark .pv-tema::before {
+    -webkit-mask-image: var(--pv-ico-claro);
+    mask-image: var(--pv-ico-claro);
+}
+
+/* Botones con texto e icono a la izquierda (iniciar, terminar). */
+.pv-btn-ico::before {
+    content: "";
+    display: inline-block;
+    width: 17px;
+    height: 17px;
+    margin-right: 8px;
+    vertical-align: -3px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+/* --------------------------------------------------------------------------
+ * 6. Tarjetas del contenido
+ * ----------------------------------------------------------------------- */
+
+.pv-tarjeta {
+    background: var(--pv-superficie) !important;
+    border: 1px solid var(--pv-borde) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: var(--pv-sombra);
+}
+
+.pv-descargo {
+    margin-top: auto !important;
+    padding: 12px !important;
+    border: 1px solid var(--pv-borde);
+    border-radius: 12px;
+    background: var(--pv-superficie-2);
+    color: var(--pv-texto-tenue);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.pv-descargo strong {
+    color: var(--pv-acento);
+}
+
+.pv-peligro,
+.pv-peligro button {
+    background: var(--pv-peligro) !important;
+    border-color: var(--pv-peligro) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 7. Pie
+ * ----------------------------------------------------------------------- */
+
+.pv-footer {
+    align-items: center !important;
+    gap: 20px !important;
+    padding: 10px 20px !important;
+    border-top: 1px solid var(--pv-borde);
+    background: var(--pv-superficie);
+    color: var(--pv-texto-tenue);
+    font-size: 12.5px;
+}
+
+.pv-punto {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--pv-acento);
+    margin-right: 7px;
+    vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
+ * 8. Adaptación a pantallas estrechas
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+    .pv-rail {
+        flex: 0 0 68px !important;
+        width: 68px !important;
+        padding: 16px 8px !important;
+    }
+    .pv-rail .pv-nav,
+    .pv-rail .pv-nav button {
+        justify-content: center !important;
+        gap: 0 !important;
+        font-size: 0 !important;
+    }
+    .pv-lema,
+    .pv-descargo {
+        display: none !important;
+    }
+}
+
+@media (max-width: 860px) {
+    .pv-header {
+        flex-wrap: wrap !important;
+    }
 }

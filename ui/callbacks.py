@@ -95,6 +95,20 @@ def terminar_serie(sesion: SesionEnVivo | None):
             audio_resumen)
 
 
+def cerrar_sesion(sesion: SesionEnVivo | None):
+    """Sale de la sesión sin guardarla. No es lo mismo que `terminar_serie`.
+
+    `Salir` abandona: libera el detector y deja la interfaz como al principio,
+    sin escribir en el historial. Guardar una serie a medias falsearía el
+    progreso del paciente, que es justo lo que la pantalla de Progreso mide.
+    """
+    if sesion is not None:
+        sesion.cerrar()
+    return (None, "", _panel_inicial(),
+            "### Sin repeticiones aún\n\nEl resultado aparecerá aquí en cuanto "
+            "completes la primera repetición.", None)
+
+
 def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
     """Procesa un frame de la webcam. Se invoca varias veces por segundo.
 

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "creado": "2026-07-29T17:55:34+00:00",
+  "creado": "2026-08-01T02:24:17+00:00",
   "ejercicio": "Ex1",
   "descripcion": "Clasificador de calidad de ejecucion por repeticion, ejercicio Ex1.",
   "feature_names": [
@@ -69,8 +69,8 @@
     "n_repeticiones": 334,
     "n_sujetos": 13,
     "n_gestos": 167,
-    "etiquetado": "reglas_automaticas",
-    "gestos_revisados": 0,
+    "etiquetado": "manual_revisado",
+    "gestos_revisados": 167,
     "acuerdo_reglas_vs_final": 1.0,
     "distribucion_clases": {
       "correcto": 186,
