@@ -5,6 +5,8 @@ __pycache__/
 .env
 .env.example
 data/*.db
+# Credenciales de acceso a la app.
+data/usuarios.txt
 data/uploads/*
 data/processed/*
 data/videos/*

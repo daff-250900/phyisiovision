@@ -8,6 +8,9 @@ scipy>=1.11,<2.0
 scikit-learn>=1.4,<2.0
 xgboost>=2.0,<4.0
 tqdm>=4.66,<5.0
+# Reescalado del logotipo antes de incrustarlo (ui/iconos.py). Viene con
+# gradio, pero se declara porque el codigo la importa directamente.
+pillow>=10.0,<14.0
 
 # Redacción de la realimentación con Gemini. Opcional: sin GEMINI_API_KEY la app
 # usa los textos de knowledge_base/ejercicios.json y funciona igual.

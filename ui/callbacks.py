@@ -316,6 +316,17 @@ def _markdown_resumen(resumen: dict[str, Any], texto_ia: str | None = None) -> s
 # Vistas secundarias (IU-6)
 # --------------------------------------------------------------------------- #
 
+def quien_ha_entrado(request: gr.Request | None = None) -> str:
+    """Rótulo con el usuario de la sesión de navegador.
+
+    `request.username` solo trae nombre cuando el login está activo. Sin login
+    —arranque local— se dice explícitamente, para que nadie confunda una app
+    abierta con una cerrada.
+    """
+    usuario = getattr(request, "username", None) if request else None
+    return paneles.tarjeta_usuario(usuario)
+
+
 def listar_pacientes():
     """Tabla de pacientes con su actividad. Aguanta la base de datos vacía."""
     datos = vistas.tabla_pacientes(repository)

@@ -71,6 +71,26 @@ entrenamiento/modelo_xgboost_ex1.ipynb          # datos -> modelo -> artefactos
 entrenamiento/consumo_modelo_gradio_ex1.ipynb   # artefactos -> inferencia -> app
 ```
 
+## Acceso
+
+La app muestra nombres de pacientes y su historial, así que **no arranca fuera de
+`localhost` sin usuarios configurados**. Crear uno:
+
+```bash
+python -m src.auth dafne        # pide la contraseña por teclado
+```
+
+Imprime una línea `usuario:pbkdf2_sha256$…` para pegar en `data/usuarios.txt`
+—que está en `.gitignore`— o en la variable `PHYSIOVISION_USUARIOS`. La
+contraseña nunca se guarda: solo un resumen con sal (PBKDF2-HMAC-SHA256).
+
+En `localhost` el login es opcional; si no hay usuarios, la barra lateral lo
+declara en ámbar para que una app abierta no se confunda con una cerrada.
+
+Cinco intentos fallidos bloquean a ese usuario cinco minutos, y el castigo se
+duplica si se insiste, hasta una hora. Cada acceso —acertado o no— queda en el
+registro de la aplicación, nunca con la contraseña.
+
 ## Configuración
 
 Todo opcional, en un `.env` en la raíz. La app arranca sin ninguna.
@@ -81,6 +101,7 @@ Todo opcional, en un `.env` en la raíz. La app arranca sin ninguna.
 | `PHYSIOVISION_MEDIAPIPE` | variante de pesos (`heavy` por defecto; **debe coincidir con la del entrenamiento**) |
 | `PHYSIOVISION_TTS_MOTOR` | motor de voz (`auto`, `cloud`, `gemini`) |
 | `PHYSIOVISION_HOST` / `PHYSIOVISION_PORT` | dónde escucha el servidor |
+| `PHYSIOVISION_USUARIOS` | usuarios y resúmenes, si no se usa `data/usuarios.txt` |
 
 En local escucha solo en loopback: `0.0.0.0` expondría la cámara y el historial
 de pacientes a toda la red.
@@ -94,6 +115,23 @@ pytest
 ## Docker
 
 ```bash
-docker build -t physiovision .
-docker run --rm -p 7860:7860 physiovision
+docker build --platform linux/amd64 -t physiovision .
+
+docker run -d --name physiovision -p 7860:7860 \
+  -e PHYSIOVISION_USUARIOS="$(grep '^dafne:' data/usuarios.txt)" \
+  -v physiovision_datos:/app/data \
+  physiovision
 ```
+
+Tres cosas que no son opcionales:
+
+- **`--platform linux/amd64`**: `mediapipe 0.10.35`, la versión con la que se
+  validó el modelo, solo publica rueda de Linux para x86_64. En arm64 la más
+  alta es la 1.0.0, que es otro extractor de landmarks.
+- **Los usuarios llegan por variable o por volumen**, nunca dentro de la imagen.
+  Sin ellos la app no arranca, porque en contenedor escucha en `0.0.0.0`.
+- **El volumen** guarda la base de pacientes y la caché de audio. Sin él, cada
+  reinicio empieza de cero.
+
+La imagen no lleva `data/`, `.env`, `entrenamiento/` ni las pruebas: pesa 1,03 GB
+y `.dockerignore` excluye todo por defecto.

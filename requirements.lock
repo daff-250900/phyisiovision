@@ -1,0 +1,28 @@
+# Versiones exactas del entorno donde se validó el modelo.
+#
+# No es un `pip freeze` completo a propósito: fija las dependencias directas y
+# deja libres las transitivas, que es lo que hace el archivo portable entre
+# macOS (donde se entrenó) y Linux (donde se despliega).
+#
+# Las cuatro que de verdad determinan los números son mediapipe, opencv, numpy y
+# xgboost: cambiarlas exige revalidar con `pytest`, que incluye las pruebas de
+# paridad entre la ruta por lotes y la ruta en vivo.
+#
+# Regenerar: ver la cabecera de este archivo en el repositorio.
+gradio==6.20.0
+opencv-python-headless==4.13.0.92
+# La que de verdad provee `cv2`: mediapipe depende de opencv-contrib y su
+# versión gana a la headless. Fijar solo la de arriba dejaba a `cv2` a la
+# deriva, que es justo lo que este archivo debe impedir.
+opencv-contrib-python==5.0.0.93
+mediapipe==0.10.35
+numpy==2.2.6
+pandas==2.3.3
+matplotlib==3.10.9
+scipy==1.15.3
+scikit-learn==1.7.2
+xgboost==3.2.0
+tqdm==4.69.1
+pillow==12.3.0
+google-genai==2.14.0
+google-cloud-texttospeech==2.37.0

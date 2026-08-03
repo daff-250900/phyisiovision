@@ -77,9 +77,19 @@ def archivos_en_indice() -> list[str]:
 
 
 def contenido_en_indice(ruta: str) -> str:
-    resultado = subprocess.run(["git", "show", f":{ruta}"],
-                               capture_output=True, text=True)
-    return resultado.stdout if resultado.returncode == 0 else ""
+    """Contenido del archivo tal como está en el índice.
+
+    Se lee en **bytes** y se decodifica a la fuerza. Con `text=True`, un archivo
+    binario en el índice —un PNG, sin ir más lejos— hacía reventar el hook con
+    `UnicodeDecodeError` antes siquiera de llegar a la comprobación de binarios
+    de `main()`, y con él el commit entero. Los bytes que no son UTF-8 se
+    sustituyen: en un binario no hay credenciales legibles que buscar, y los
+    `\x00` sobreviven a la sustitución, que es lo que necesita esa comprobación.
+    """
+    resultado = subprocess.run(["git", "show", f":{ruta}"], capture_output=True)
+    if resultado.returncode != 0:
+        return ""
+    return resultado.stdout.decode("utf-8", errors="replace")
 
 
 def revisar(ruta: str, contenido: str) -> list[str]:

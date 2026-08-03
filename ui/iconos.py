@@ -16,7 +16,14 @@ completa con el tamaño y la posición.
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from urllib.parse import quote
+
+#: Logotipo del proyecto. Viaja incrustado como `data:` URI, igual que los
+#: iconos: así no hace falta `allowed_paths` ni servir archivos sueltos, y la
+#: cabecera no depende de una petición más para pintarse.
+RUTA_LOGO = Path(__file__).resolve().parent.parent / "src" / "figures" / "logo.png"
 
 _ENVOLTORIO = (
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' "
@@ -46,9 +53,9 @@ TRAZOS: dict[str, str] = {
              "<path d='M11.6 17.4h.01'/>",
     "salir": "<path d='M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4'/>"
              "<path d='M9 16l4-4-4-4'/><path d='M13 12H3'/>",
-    # Doble flecha: apunta hacia donde se va la barra. Con la tira plegada, el
-    # CSS la gira 180 grados y entonces apunta a la vuelta.
-    "plegar": "<path d='m6.5 7 5 5-5 5'/><path d='m13 7 5 5-5 5'/>",
+    # Doble flecha hacia la izquierda: apunta a donde se va la barra. Con la
+    # barra ya escondida, el CSS la gira 180 grados y apunta a la vuelta.
+    "plegar": "<path d='m11 7-5 5 5 5'/><path d='m17.5 7-5 5 5 5'/>",
     "claro": "<circle cx='12' cy='12' r='4'/>"
              "<path d='M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M5.1 5.1l1.6 1.6"
              "M17.3 17.3l1.6 1.6M18.9 5.1l-1.6 1.6M6.7 17.3l-1.6 1.6'/>",
@@ -73,6 +80,45 @@ TRAZOS: dict[str, str] = {
 
 def _uri(trazos: str) -> str:
     return "data:image/svg+xml," + quote(_ENVOLTORIO.format(trazos), safe="")
+
+
+#: Lado máximo del logotipo incrustado. En pantalla se dibuja a 62 px y en la
+#: portada de acceso a 84; 256 cubre pantallas de alta densidad con holgura.
+#: Importa porque el `data:` URI viaja **dentro de la página**: el archivo de
+#: 164 KB se convierte en 224 KB de base64, y eso se paga en cada carga.
+LADO_LOGO = 256
+
+_logo_cache: str | None = None
+
+
+def logo_uri() -> str:
+    """El logotipo en base64, reescalado. Cadena vacía si el archivo no está."""
+    global _logo_cache
+    if _logo_cache is not None:
+        return _logo_cache
+    if not RUTA_LOGO.exists():
+        _logo_cache = ""
+        return _logo_cache
+
+    datos = RUTA_LOGO.read_bytes()
+    try:
+        import io
+
+        from PIL import Image
+
+        imagen = Image.open(io.BytesIO(datos))
+        if max(imagen.size) > LADO_LOGO:
+            imagen.thumbnail((LADO_LOGO, LADO_LOGO), Image.LANCZOS)
+            memoria = io.BytesIO()
+            imagen.save(memoria, format="PNG", optimize=True)
+            datos = memoria.getvalue()
+    except Exception:
+        # Sin Pillow o con un PNG raro se incrusta el original: pesa más, pero
+        # quedarse sin logotipo por una optimización sería peor.
+        pass
+
+    _logo_cache = "data:image/png;base64," + base64.b64encode(datos).decode("ascii")
+    return _logo_cache
 
 
 def reglas_css() -> str:

@@ -22,6 +22,8 @@ from pathlib import Path
 import gradio as gr
 
 from ui import paneles, vistas
+from src.auth import hay_usuarios
+from ui.iconos import logo_uri
 from ui.callbacks import (
     abrir_historial_paciente,
     alternar_pausa,
@@ -33,6 +35,7 @@ from ui.callbacks import (
     knowledge_base,
     listar_pacientes,
     procesar_frame,
+    quien_ha_entrado,
     terminar_serie,
     tic_cronometro,
 )
@@ -119,24 +122,103 @@ JS_PLEGAR = """
 }
 """
 
-#: Arranca la cámara sin que el paciente tenga que buscar el botón de Gradio.
-#: La fuente está oculta (solo se ve el seguimiento), así que si esto fallara no
-#: habría forma de arrancarla a mano: por eso, si tras varios intentos no se
-#: consigue, se descubre el componente para que sus controles vuelvan a estar
-#: disponibles.
+#: Arranca la cámara al iniciar sesión, sin que nadie tenga que pulsar nada.
+#:
+#: **Qué elemento hay que pulsar.** Leyendo el componente compilado de Gradio
+#: (`ImageUploader-*.js`), el botón de la cámara se rotula así:
+#:
+#:     aria-label = (modo === "image") ? "capture photo" : "start recording"
+#:
+#: Como aquí la fuente es un `gr.Image`, el modo es `"image"` y **su aria-label
+#: es "capture photo" aunque el componente esté en streaming**. Lo que sí es
+#: fiable es el `title` del icono de dentro, que sigue el estado real:
+#: `start recording` / `stop recording`. De ahí se sube al `<button>` que lo
+#: envuelve, que es quien lleva el manejador.
+#:
+#: Lo mismo con el permiso: `title="grant webcam access"` está en un `<div>` y el
+#: pulsable es el `<button>` que hay dentro.
 JS_CAMARA = """
 async () => {
-  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const CLAVE = 'pv-camara-permiso';
   const caja = document.querySelector('.pv-camara');
   if (!caja) return;
-  for (let intento = 0; intento < 40; intento++) {
-    const permiso = caja.querySelector('[title="grant webcam access"]');
-    if (permiso) { permiso.click(); await espera(400); continue; }
-    const grabar = caja.querySelector('[aria-label="start recording"]');
-    if (grabar) { grabar.click(); return; }
-    await espera(250);
+
+  const traza = (paso) => console.debug('[physiovision] cámara:', paso);
+  const pulsar = (elemento) => {
+    if (!elemento) return false;
+    (elemento.closest('button') || elemento).click();
+    return true;
+  };
+  const grabando = () => !!caja.querySelector('[title="stop recording"]');
+  const botonGrabar = () =>
+    caja.querySelector('[title="start recording"]') ||
+    caja.querySelector('[aria-label="capture photo"]') ||
+    caja.querySelector('[aria-label="start recording"]');
+
+  const yaConcedido = async () => {
+    if (localStorage.getItem(CLAVE) === 'si') return true;
+    try {
+      const estado = await navigator.permissions.query({ name: 'camera' });
+      if (estado && estado.state === 'granted') {
+        localStorage.setItem(CLAVE, 'si');
+        return true;
+      }
+    } catch (error) {
+      // Safari y Firefox no admiten 'camera' en la API de permisos.
+    }
+    return false;
+  };
+
+  if (!(await yaConcedido())) {
+    try {
+      traza('pidiendo permiso');
+      const flujo = await navigator.mediaDevices.getUserMedia({ video: true });
+      flujo.getTracks().forEach((pista) => pista.stop());
+      localStorage.setItem(CLAVE, 'si');
+    } catch (error) {
+      traza('permiso denegado: ' + error.name);
+      localStorage.removeItem(CLAVE);
+      caja.classList.add('pv-camara--visible');
+      return;
+    }
   }
-  caja.classList.add('pv-camara--visible');
+
+  const intentar = () => {
+    if (grabando()) { traza('ya está grabando'); return true; }
+    if (pulsar(caja.querySelector('[title="grant webcam access"] button')
+               || caja.querySelector('[title="grant webcam access"]'))) {
+      traza('abriendo la cámara');
+      return false;
+    }
+    if (pulsar(botonGrabar())) { traza('grabando'); return true; }
+    return false;
+  };
+
+  if (intentar()) return;
+
+  const observador = new MutationObserver(() => {
+    if (intentar()) { observador.disconnect(); clearTimeout(limite); }
+  });
+  observador.observe(caja, {
+    childList: true, subtree: true, attributes: true,
+    attributeFilter: ['aria-label', 'title'],
+  });
+  const limite = setTimeout(() => {
+    observador.disconnect();
+    if (!grabando()) {
+      traza('no se pudo arrancar: se muestran los controles');
+      caja.classList.add('pv-camara--visible');
+    }
+  }, 10000);
+}
+"""
+
+#: Al cerrar la serie se apaga la cámara. Si no, el piloto sigue encendido con
+#: la sesión ya terminada, que en una herramienta clínica no es aceptable.
+JS_CAMARA_PARAR = """
+() => {
+  const parar = document.querySelector('.pv-camara [title="stop recording"]');
+  if (parar) (parar.closest('button') || parar).click();
 }
 """
 
@@ -149,10 +231,40 @@ JS_PANTALLA = """
 }
 """
 
-MARCA = """
+#: La marca es fija: no se pliega con la barra. El `alt` va vacío a propósito —
+#: el nombre está escrito al lado, y repetirlo haría que un lector de pantalla
+#: dijese "PhysioVision" dos veces seguidas.
+_LOGO = logo_uri()
+_IMAGEN_MARCA = (f'<img class="pv-marca__logo" src="{_LOGO}" alt="">' if _LOGO
+                 else '<span class="pv-marca__logo pv-ico--logo"></span>')
+
+MARCA = f"""
 <div class="pv-marca">
-  <span class="pv-marca__ico pv-ico--logo"></span>
-  <span>Physio<em>Vision</em></span>
+  {_IMAGEN_MARCA}
+  <span class="pv-marca__nombre">Physio<em>Vision</em></span>
+</div>
+"""
+
+#: Portada de la pantalla de acceso. Gradio la sirve con su propia plantilla y
+#: **sin nuestra hoja de estilos**, así que aquí los estilos van en línea o no
+#: se aplican. El verde es el mismo en los dos temas: la pantalla de acceso
+#: hereda el claro u oscuro del navegador y un tono por modo obligaría a
+#: duplicar el mensaje.
+MENSAJE_ACCESO = f"""
+<div style="text-align:center;line-height:1.5">
+  <img src="{_LOGO}" alt="" width="84" height="84"
+       style="border-radius:19px;margin-bottom:12px">
+  <div style="font-size:21px;font-weight:700;letter-spacing:-.01em">
+    Physio<span style="color:#16A34A">Vision</span>
+  </div>
+  <div style="font-size:13px;opacity:.7;margin-top:2px">
+    Asistente visual para rehabilitación
+  </div>
+  <div style="font-size:12.5px;opacity:.75;margin-top:14px;padding-top:12px;
+              border-top:1px solid rgba(127,127,127,.25)">
+    Acceso restringido: esta herramienta muestra datos de pacientes.<br>
+    Tras varios intentos fallidos el acceso se bloquea temporalmente.
+  </div>
 </div>
 """
 
@@ -180,7 +292,22 @@ def _clases_nav(clave: str, activa: str) -> list[str]:
     return clases
 
 
-def create_app() -> gr.Blocks:
+JS_SALIR = """
+() => { window.location.href = 'logout'; }
+"""
+
+
+def create_app(con_login: bool | None = None) -> gr.Blocks:
+    """Construye la interfaz.
+
+    Args:
+        con_login: si la app corre con autenticación. Determina si `Salir`
+            cierra además la sesión del navegador; sin login, `/logout` no
+            existe y llevar allí daría un 404. Por defecto se deduce de los
+            usuarios configurados.
+    """
+    if con_login is None:
+        con_login = hay_usuarios()
     opciones = ejercicios_disponibles()
 
     # El CSS ya no se pasa aquí: en Gradio 6 va en launch() (ver app.py).
@@ -238,18 +365,16 @@ def create_app() -> gr.Blocks:
                     gr.Button(etiqueta, elem_classes=_clases_nav(clave, "sesion"))
                     for clave, etiqueta in NAV
                 ]
+                usuario_actual = gr.HTML()
                 gr.HTML(DESCARGO)
                 boton_salir = gr.Button("Salir",
                                         elem_classes=["pv-nav", "pv-ico--salir"])
-                boton_plegar = gr.Button(
-                    "", scale=0,
-                    elem_classes=["pv-icono", "pv-plegar", "pv-ico--plegar"])
 
             with gr.Column(elem_classes="pv-main"):
                 with gr.Tabs(elem_classes="pv-tabs") as pestanas:
                     with gr.Tab("Sesión actual", id="sesion"):
-                        with gr.Row():
-                            with gr.Column(scale=3):
+                        with gr.Row(elem_classes="pv-escena"):
+                            with gr.Column(scale=3, elem_classes="pv-columna-video"):
                                 # El contenedor es el que ancla la superposición
                                 # (IU-5): los rótulos van en HTML encima, no
                                 # pintados en el frame, que costaría CPU 30 veces
@@ -348,6 +473,14 @@ def create_app() -> gr.Blocks:
                     with gr.Tab("Ayuda", id="ayuda"):
                         gr.Markdown(vistas.AYUDA)
 
+            # El botón de plegar va fuera de la barra a propósito: esconderla
+            # con él dentro dejaría la interfaz sin forma de volver a abrirla.
+            # El CSS lo ancla a la ventana, así que aquí solo importa que esté
+            # en un contenedor que nunca se oculta.
+            boton_plegar = gr.Button(
+                "", scale=0,
+                elem_classes=["pv-icono", "pv-plegar", "pv-ico--plegar"])
+
         # -- pie ------------------------------------------------------------- #
         with gr.Row(elem_classes="pv-footer"):
             gr.HTML(PIE)
@@ -355,6 +488,7 @@ def create_app() -> gr.Blocks:
         # -- eventos --------------------------------------------------------- #
 
         demo.load(js=JS_INICIO)
+        demo.load(fn=quien_ha_entrado, inputs=None, outputs=[usuario_actual])
         boton_tema.click(js=JS_TEMA)
         boton_plegar.click(js=JS_PLEGAR)
 
@@ -393,6 +527,12 @@ def create_app() -> gr.Blocks:
         boton_terminar.click(fn=terminar_serie, inputs=[sesion],
                              outputs=SALIDAS_FIN)
         boton_salir.click(fn=cerrar_sesion, inputs=[sesion], outputs=SALIDAS_FIN)
+        if con_login:
+            # Salir cierra las dos cosas: la sesión de ejercicio y la del
+            # navegador. Sin login no hay ruta /logout a la que ir.
+            boton_salir.click(js=JS_SALIR)
+        for boton in (boton_terminar, boton_salir):
+            boton.click(js=JS_CAMARA_PARAR)
         boton_pausa.click(fn=alternar_pausa, inputs=[sesion],
                           outputs=[sesion, reloj, boton_pausa])
         boton_pantalla.click(js=JS_PANTALLA)

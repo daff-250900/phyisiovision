@@ -1,7 +1,38 @@
-__pycache__/
-*.py[cod]
-.venv/
-.git/
-data/*.db
-data/uploads/*
-data/processed/*
+# Todo queda fuera por defecto. Es deliberado: con una lista de exclusiones,
+# cualquier carpeta nueva con datos de pacientes entra en la imagen por olvido.
+# Aquí hay que dar permiso explícito, y lo que no se nombra no viaja.
+*
+
+# --- lo único que la aplicación necesita para funcionar --------------------- #
+!app.py
+!requirements.txt
+!requirements.lock
+!src
+!ui
+!knowledge_base
+!models
+
+# --- y de eso, lo que nunca debe viajar ------------------------------------- #
+# Manda la última regla que coincida, así que estas van al final.
+
+# Secretos y credenciales: `.env` lleva la clave de Gemini y
+# `data/usuarios.txt` los resúmenes de las contraseñas.
+.env
+.env.*
+data
+
+# Los pesos de MediaPipe se descargan en su propia capa dentro de la imagen,
+# para no depender de que estén en la máquina que construye.
+models/mediapipe
+
+# Datos de salud y material de entrenamiento: no salen de donde se generaron.
+entrenamiento
+cont
+
+# Ruido
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
+.git
+.venv
+tests

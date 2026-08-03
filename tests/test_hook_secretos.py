@@ -191,3 +191,55 @@ def test_la_marca_es_por_linea_no_por_archivo() -> None:
     problemas = hook.revisar("tests/algo.py", contenido)
     assert len(problemas) == 1
     assert ":2:" in problemas[0], "debe señalar la línea sin marcar"
+
+
+def test_un_binario_en_el_indice_no_tumba_el_commit(tmp_path) -> None:
+    """Un PNG en el índice reventaba el hook con UnicodeDecodeError.
+
+    El commit se bloqueaba entero, no por una credencial sino porque `git show`
+    no se podía decodificar como texto.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    ganchos = tmp_path / ".githooks"
+    ganchos.mkdir()
+    (ganchos / "pre-commit").write_text(RUTA_HOOK.read_text(encoding="utf-8"),
+                                        encoding="utf-8")
+    (ganchos / "pre-commit").chmod(0o755)
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"],
+                   cwd=tmp_path, check=True)
+
+    # Un PNG de un píxel: empieza por 0x89, que no es UTF-8 válido.
+    (tmp_path / "logo.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + bytes(range(256)) * 4)
+    (tmp_path / "codigo.py").write_text("VALOR = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+
+    r = subprocess.run(["git", "commit", "-m", "con imagen"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, f"el hook tumbó un commit con un binario: {r.stderr}"
+    assert "Traceback" not in r.stderr
+
+
+def test_un_binario_no_esconde_un_secreto_en_otro_archivo(tmp_path) -> None:
+    """Y saltarse el binario no puede saltarse el resto del índice."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    ganchos = tmp_path / ".githooks"
+    ganchos.mkdir()
+    (ganchos / "pre-commit").write_text(RUTA_HOOK.read_text(encoding="utf-8"),
+                                        encoding="utf-8")
+    (ganchos / "pre-commit").chmod(0o755)
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"],
+                   cwd=tmp_path, check=True)
+
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(range(256)))
+    (tmp_path / ".env.example").write_text(          # secreto-de-prueba
+        "GEMINI_API_KEY=AQ.Ab8RN6JxK2mPqR7sT9vW1yZ3aB5cD7eF9gH0iJ2k\n")  # secreto-de-prueba
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+
+    r = subprocess.run(["git", "commit", "-m", "imagen y secreto"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode != 0 and "BLOQUEADO" in r.stderr

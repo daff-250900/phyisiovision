@@ -22,7 +22,7 @@ CABLEADO = {
     8: 7,    # navegación de la tira lateral (pestaña + 7 botones)
     3: 1,    # alternar pausa
     2: 3,    # lista de pacientes, historial y progreso
-    1: 2,    # tic del cronómetro y estado del sistema
+    1: 3,    # tic del cronómetro, estado del sistema y quién ha entrado
 }
 
 

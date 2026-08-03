@@ -252,6 +252,19 @@ def cabecera_vacia() -> str:
             '<strong>—</strong></div></div>')
 
 
+def tarjeta_usuario(usuario: str | None) -> str:
+    """Quién está usando la aplicación, al pie de la barra lateral."""
+    if not usuario:
+        return ('<div class="pv-usuario pv-usuario--abierto">'
+                '<span class="pv-usuario__ini">!</span>'
+                '<div><strong>Sin autenticación</strong>'
+                '<em>arranque local</em></div></div>')
+    return (f'<div class="pv-usuario">'
+            f'<span class="pv-usuario__ini">{html.escape(usuario[:1].upper())}</span>'
+            f'<div><strong>{html.escape(usuario)}</strong>'
+            f'<em>sesión iniciada</em></div></div>')
+
+
 def cronometro(sesion) -> str:
     """Reloj de sesión. En pausa se marca, porque el tiempo deja de correr."""
     segundos = int(getattr(sesion, "segundos_activos", 0.0))

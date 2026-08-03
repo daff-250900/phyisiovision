@@ -49,7 +49,7 @@ footer {
 .pv-header {
     align-items: center !important;
     gap: 18px !important;
-    padding: 12px 20px !important;
+    padding: 8px 20px !important;
     background: var(--pv-superficie);
     border-bottom: 1px solid var(--pv-borde);
     flex-wrap: nowrap !important;
@@ -58,29 +58,46 @@ footer {
 .pv-marca {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 20px;
+    gap: 14px;
+    height: 100%;
+}
+
+.pv-marca__nombre {
+    font-size: 27px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
     color: var(--pv-texto);
     white-space: nowrap;
 }
 
-.pv-marca .pv-marca__ico {
-    width: 26px;
-    height: 26px;
+.pv-marca__nombre em {
+    color: var(--pv-acento);
+    font-style: normal;
+}
+
+.pv-marca .pv-marca__logo {
+    width: 62px;
+    height: 62px;
+    flex: 0 0 62px;
+    border-radius: 14px;
+    object-fit: cover;
+    /* El PNG trae su propio fondo oscuro: redondearlo lo convierte en una
+     * pastilla y deja de parecer un recorte pegado sobre el tema claro. */
+    background: #0C0F17;
+    border: 1px solid var(--pv-borde);
+}
+
+/* Reserva vectorial, si el PNG no estuviera. */
+.pv-marca span.pv-marca__logo {
     background-color: var(--pv-acento);
+    border: 0;
     -webkit-mask-size: contain;
     mask-size: contain;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
     -webkit-mask-position: center;
     mask-position: center;
-}
-
-.pv-marca em {
-    color: var(--pv-acento);
-    font-style: normal;
 }
 
 /* --------------------------------------------------------------------------
@@ -91,7 +108,7 @@ footer {
     align-items: stretch !important;
     gap: 0 !important;
     flex-wrap: nowrap !important;
-    min-height: calc(100vh - 132px);
+    min-height: calc(100vh - 152px);
 }
 
 .pv-rail {
@@ -106,22 +123,11 @@ footer {
     overflow: hidden;
 }
 
-body.pv-plegada .pv-rail {
-    flex: 0 0 68px !important;
-    width: 68px !important;
-    padding: 16px 8px !important;
-}
-
 .pv-lema {
     color: var(--pv-texto-tenue);
     font-size: 12.5px;
     line-height: 1.45;
     padding: 0 10px 12px;
-}
-
-body.pv-plegada .pv-lema,
-body.pv-plegada .pv-descargo {
-    display: none !important;
 }
 
 .pv-main {
@@ -181,14 +187,6 @@ body.pv-plegada .pv-descargo {
     color: var(--pv-acento) !important;
     font-weight: 600 !important;
     box-shadow: inset 3px 0 0 0 var(--pv-acento) !important;
-}
-
-body.pv-plegada .pv-nav,
-body.pv-plegada .pv-nav button {
-    justify-content: center !important;
-    gap: 0 !important;
-    padding: 11px 0 !important;
-    font-size: 0 !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -326,19 +324,8 @@ body.dark .pv-tema::before {
  * ----------------------------------------------------------------------- */
 
 @media (max-width: 1100px) {
+    /* En estrecho la barra arranca escondida; se abre con el mismo botón. */
     .pv-rail {
-        flex: 0 0 68px !important;
-        width: 68px !important;
-        padding: 16px 8px !important;
-    }
-    .pv-rail .pv-nav,
-    .pv-rail .pv-nav button {
-        justify-content: center !important;
-        gap: 0 !important;
-        font-size: 0 !important;
-    }
-    .pv-lema,
-    .pv-descargo {
         display: none !important;
     }
 }
@@ -1017,47 +1004,15 @@ button:focus-visible {
 /* La marca ocupa su propia sección, alineada con la tira lateral y con el
  * mismo pliegue: el logotipo queda siempre sobre la barra. */
 .pv-header__marca {
-    flex: 0 0 236px !important;
-    width: 236px !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
     min-width: 0 !important;
-    padding: 0 !important;
+    padding: 0 22px 0 0 !important;
     border-right: 1px solid var(--pv-borde);
-    transition: flex-basis .16s ease, width .16s ease;
 }
 
-body.pv-plegada .pv-header__marca {
-    flex: 0 0 68px !important;
-    width: 68px !important;
-}
-
-/* Plegada, la marca se queda solo con el logotipo. */
-body.pv-plegada .pv-marca span:last-child {
-    display: none;
-}
-
-body.pv-plegada .pv-marca {
-    justify-content: center;
-    gap: 0;
-}
-
-/* El pliegue vive abajo a la derecha de la tira, no en la cabecera. */
-.pv-plegar {
-    align-self: flex-end !important;
-    margin-top: 8px !important;
-}
-
-.pv-plegar::before {
-    transition: transform .16s ease;
-}
-
-/* Plegada, la doble flecha apunta a la vuelta. */
-body.pv-plegada .pv-plegar::before {
-    transform: rotate(180deg);
-}
-
-body.pv-plegada .pv-plegar {
-    align-self: center !important;
-}
+/* La marca NO se pliega: el nombre y el logotipo son fijos, se mire como se
+ * mire la barra lateral. */
 
 /* La cámara fuente no se enseña: el paciente mira el seguimiento. No se usa
  * `display: none` a propósito — el elemento tiene que seguir reproduciendo para
@@ -1088,4 +1043,162 @@ body.pv-plegada .pv-plegar {
 .pv-camara--visible video,
 .pv-camara--visible img {
     max-height: 190px !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 15. El ancho que libera la barra va al vídeo
+ * ----------------------------------------------------------------------- */
+
+/* El contenido absorbe lo que la tira deja libre... */
+.pv-body > .pv-main {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+
+.pv-escena {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+}
+
+/* ...y dentro, el panel de métricas conserva su ancho mientras el vídeo se
+ * queda con todo el resto. Si los dos crecieran en proporción 3:2, plegar la
+ * barra ensancharía también las tarjetas, que no lo necesitan. */
+.pv-panel {
+    flex: 0 0 clamp(320px, 34%, 440px) !important;
+    min-width: 0 !important;
+}
+
+.pv-columna-video {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+.pv-video__lienzo,
+.pv-video__lienzo img {
+    width: 100% !important;
+}
+
+/* El cambio se ve como un movimiento, no como un salto. */
+.pv-main,
+.pv-columna-video {
+    transition: width .16s ease, flex-basis .16s ease;
+}
+
+/* En estrecho manda la regla de IU-7: el panel baja bajo el vídeo. */
+@media (max-width: 1280px) {
+    .pv-escena {
+        flex-wrap: wrap !important;
+    }
+    .pv-panel,
+    .pv-columna-video {
+        flex: 1 1 100% !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 16. Plegar esconde la barra entera
+ *
+ * La barra se oculta con `display: none`, sin dejar tira de iconos ni restos.
+ * Para que eso sea posible el botón de plegar **no vive dentro de ella**: está
+ * anclado a la ventana, así que da igual que su contenedor desaparezca. Es lo
+ * que evita el caso peor — esconder la barra y quedarse sin forma de abrirla.
+ * ----------------------------------------------------------------------- */
+
+body.pv-plegada .pv-rail {
+    display: none !important;
+}
+
+.pv-plegar {
+    position: fixed !important;
+    bottom: 18px;
+    /* Desplegada, queda en la esquina inferior derecha de la barra. */
+    left: 178px;
+    z-index: 40;
+    margin: 0 !important;
+    background: var(--pv-superficie) !important;
+    border: 1px solid var(--pv-borde) !important;
+    box-shadow: var(--pv-sombra);
+    transition: left .16s ease;
+}
+
+/* Escondida, se retira al borde de la ventana. */
+body.pv-plegada .pv-plegar {
+    left: 14px;
+}
+
+.pv-plegar::before {
+    transition: transform .16s ease;
+}
+
+/* Con la barra ya escondida, la doble flecha apunta a la vuelta. */
+body.pv-plegada .pv-plegar::before {
+    transform: rotate(180deg);
+}
+
+/* Hueco al pie de la barra para que su contenido no quede bajo el botón. */
+.pv-rail {
+    padding-bottom: 72px !important;
+}
+
+body.pv-plegada .pv-header__marca {
+    border-right-color: transparent;
+}
+
+@media (max-width: 1100px) {
+    .pv-plegar {
+        left: 14px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 17. Quién ha entrado
+ * ----------------------------------------------------------------------- */
+
+.pv-usuario {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 12px;
+    background: var(--pv-superficie-2);
+}
+
+.pv-usuario__ini {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 50%;
+    background: var(--pv-acento);
+    color: #fff;
+    font-weight: 700;
+}
+
+.pv-usuario strong {
+    display: block;
+    color: var(--pv-texto);
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.pv-usuario em {
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+    font-style: normal;
+}
+
+/* Sin autenticación se dice, y se dice en ámbar: una app abierta no puede
+ * parecerse a una cerrada. */
+.pv-usuario--abierto {
+    border-color: var(--pv-atencion);
+    background: var(--pv-atencion-suave);
+}
+
+.pv-usuario--abierto .pv-usuario__ini {
+    background: var(--pv-atencion);
 }
