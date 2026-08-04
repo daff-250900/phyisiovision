@@ -1,0 +1,52 @@
+# Proxy con TLS delante de PhysioVision.
+#
+# El dominio llega por la variable DOMINIO del archivo de entorno:
+#
+#   DOMINIO=physiovision.ejemplo.org  -> certificado de Let's Encrypt, automático
+#   DOMINIO=localhost                 -> certificado de la CA interna de Caddy
+#
+# Con la CA interna hay que instalar su raíz en el equipo que abra la app; si no,
+# el navegador avisa del certificado. Y el aviso importa: sin un origen seguro
+# aceptado, `getUserMedia` no abre la cámara y la sesión no arranca.
+# La raíz se saca con:
+#
+#   docker compose -f deploy/docker-compose.yml cp \
+#       proxy:/data/caddy/pki/authorities/local/root.crt .
+
+{
+	# Sin correo, Let's Encrypt no avisa de los certificados por caducar.
+	email {$ACME_EMAIL:admin@example.org}
+}
+
+{$DOMINIO} {
+	# Con `localhost` o una IP, Caddy usa su CA interna automáticamente.
+
+	encode zstd gzip
+
+	# Cabeceras mínimas. `Permissions-Policy` deja la cámara solo a este origen:
+	# es la propia app la que la usa, nadie incrustado dentro.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(self), microphone=()"
+		-Server
+	}
+
+	reverse_proxy app:7860 {
+		# Gradio habla por websocket para el flujo de la cámara.
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		# Una sesión larga no puede cortarse por inactividad del canal.
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

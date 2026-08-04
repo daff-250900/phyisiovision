@@ -28,3 +28,7 @@ entrenamiento/figuras/
 .pytest_cache/
 ANALISIS.md
 PLAN.md
+
+# Despliegue: entorno real y secretos montados en el contenedor.
+deploy/.env
+deploy/secretos/

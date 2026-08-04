@@ -135,3 +135,12 @@ Tres cosas que no son opcionales:
 
 La imagen no lleva `data/`, `.env`, `entrenamiento/` ni las pruebas: pesa 1,03 GB
 y `.dockerignore` excluye todo por defecto.
+
+Para un despliegue completo —TLS, volumen, secretos y copias— hay un
+`docker compose` listo y su manual en [`deploy/LEEME.md`](deploy/LEEME.md):
+
+```bash
+cp deploy/.env.ejemplo deploy/.env   # y rellénalo
+./deploy/comprobar.sh
+docker compose -f deploy/docker-compose.yml up -d --build
+```

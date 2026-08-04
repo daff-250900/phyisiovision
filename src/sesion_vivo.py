@@ -18,6 +18,7 @@ B. Clasificación  al cerrar repetición    XGBoost sobre las 26 variables
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import unicodedata
@@ -35,6 +36,8 @@ from src.pose_detector import PoseDetector
 from src.rag import KnowledgeBase
 from src.segmentador_online import AcumuladorEnVivo, MetricasInstantaneas
 from src.voz import SintetizadorVoz
+
+logger = logging.getLogger(__name__)
 
 FASES_LEGIBLES = {
     "calibrando": "Calibrando…",
@@ -368,6 +371,15 @@ class SesionEnVivo:
             return None
 
         self.fps_real = self._medir_fps()
+        # La tasa real es la señal que más silenciosamente degrada el sistema:
+        # el modelo se entrenó a 30 Hz y sus variables temporales se desplazan
+        # con el muestreo. Queda en el registro siempre, con aviso si se desvía.
+        aviso = self.aviso_tasa
+        if aviso:
+            logger.warning("tasa de camara %.1f fps (entrenado a 30): %s",
+                           self.fps_real, aviso)
+        else:
+            logger.info("tasa de camara medida: %.1f fps", self.fps_real)
         self._acumulador = AcumuladorEnVivo(fps=self.fps_real,
                                             lado=self.lado_fijado)
         ultimo = None
@@ -567,6 +579,21 @@ class SesionEnVivo:
             dominante = "correcto"
 
         confianzas = [r.confidence for r in self.repeticiones if r.label == dominante]
+        cobertura = self._cobertura()
+
+        # Una línea por serie terminada. Sin el nombre del paciente: el registro
+        # va a `stdout` y de ahí a donde recoja los logs el que despliegue, que
+        # no es sitio para datos identificables.
+        registrar = logger.warning if cobertura < 0.5 else logger.info
+        registrar("serie terminada: %s, %d repeticiones (%d correctas), "
+                  "cobertura de pose %.0f%%, fuente %s, %.1f fps",
+                  self.ejercicio, len(self.repeticiones),
+                  sum(1 for e in etiquetas if e == "correcto"), cobertura * 100,
+                  self.repeticiones[-1].source, self.fps_real or 0.0)
+        if cobertura < 0.5:
+            logger.warning("la postura fue visible en menos de la mitad del "
+                           "tiempo: los resultados de esta serie son poco fiables")
+
         return {
             "paciente": self.paciente,
             "ejercicio": self.ejercicio,

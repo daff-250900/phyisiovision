@@ -13,6 +13,7 @@ pero devuelve `source: "reglas"` para que quede visible en la interfaz.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ import pandas as pd
 
 from src.config import settings
 from src.schemas import PredictionResult
+
+logger = logging.getLogger(__name__)
 
 # Contrato de reserva, usado solo si no existe feature_contract.json.
 _LABELS_POR_DEFECTO = {0: "rango_insuficiente", 1: "correcto", 2: "compensacion_tronco"}
@@ -54,6 +57,18 @@ class ExerciseClassifier:
         self._cargar_umbrales()
         self.model = None
         self._cargar_modelo()
+
+        # Se avisa aquí y no en cada predicción: es una vez por sesión, y sin
+        # esta línea una app que ha perdido el modelo funciona «bien» durante
+        # semanas clasificando con dos umbrales.
+        if self.model is None:
+            logger.warning(
+                "sin modelo entrenado en %s: se clasifica con reglas "
+                "biomecanicas (source=reglas)", self.model_path)
+        else:
+            logger.info("modelo cargado: %d variables, umbrales ROM %.0f / "
+                        "tronco %.0f", len(self.FEATURE_NAMES), self.rom_minimo,
+                        self.tronco_limite)
 
     # -- carga --------------------------------------------------------------- #
 
