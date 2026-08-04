@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
+import cv2
 import gradio as gr
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
+from src.config import settings
 from src.rag import KnowledgeBase
 from src.sesion_vivo import FASES_LEGIBLES, SesionEnVivo
 from src.storage import SessionRepository
@@ -18,10 +21,31 @@ from ui import paneles, vistas
 # estado por usuario. El `PoseLandmarker`, en cambio, vive dentro de cada
 # `SesionEnVivo` y nunca se comparte entre sesiones.
 knowledge_base = KnowledgeBase()
-repository = SessionRepository()
+# Sin historial no se crea siquiera el repositorio: así no hay archivo de base
+# de datos que exista «por si acaso».
+repository = SessionRepository() if settings.guarda_historial else None
 
 COLUMNAS_HISTORIAL = ["Fecha", "Ejercicio", "Resultado", "Confianza",
                       "ROM máx.", "Reps", "Correctas", "Lado"]
+
+#: Ancho del fotograma que se devuelve al navegador. Es una decisión de coste,
+#: no de calidad: la zona de vídeo en pantalla mide unos 800 px, así que
+#: devolver 1920 manda cuatro veces más píxeles de los que se ven. Medido sobre
+#: un fotograma anotado real, a 30 Hz: 42 KB por fotograma y 4,7 GB/hora a 1920,
+#: frente a 16 KB y 1,8 GB/hora a 960. En una nube que cobra el tráfico de
+#: salida, esa diferencia es la mitad de la factura.
+#:
+#: **Solo afecta a lo que se ve.** Las mediciones se hacen antes, sobre el
+#: fotograma completo, y el modelo no ve esta imagen.
+ANCHO_SALIDA = int(os.environ.get("PHYSIOVISION_ANCHO_SALIDA", "960"))
+
+
+def _para_pantalla(frame: np.ndarray | None) -> np.ndarray | None:
+    """Reduce el fotograma anotado antes de mandarlo al navegador."""
+    if frame is None or ANCHO_SALIDA <= 0 or frame.shape[1] <= ANCHO_SALIDA:
+        return frame
+    alto = round(frame.shape[0] * ANCHO_SALIDA / frame.shape[1])
+    return cv2.resize(frame, (ANCHO_SALIDA, alto), interpolation=cv2.INTER_AREA)
 
 
 def ejercicios_disponibles() -> list[tuple[str, str]]:
@@ -90,10 +114,11 @@ def terminar_serie(sesion: SesionEnVivo | None):
         return _fin_de_sesion(
             "No se detectó ninguna repetición completa. Nada que guardar.")
 
-    try:
-        repository.save_summary(resumen)
-    except Exception as exc:                      # no perder la sesión por la BD
-        gr.Warning(f"No se pudo guardar en el historial: {exc}")
+    if repository is not None:
+        try:
+            repository.save_summary(resumen)
+        except Exception as exc:                  # no perder la sesión por la BD
+            gr.Warning(f"No se pudo guardar en el historial: {exc}")
 
     texto_ia = sesion.redactar_resumen(
         knowledge_base.retrieve(str(resumen["ejercicio"]),
@@ -149,6 +174,7 @@ def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
         # La redacción de Gemini y el audio llegan unos segundos después de la
         # repetición. Este es el punto donde esos resultados asíncronos entran
         # en pantalla y en los altavoces.
+        anotado = _para_pantalla(anotado)
         mejorado = sesion.hay_texto_nuevo()
         if mejorado is not None:
             return (anotado, panel, overlay,
@@ -158,6 +184,7 @@ def procesar_frame(frame: np.ndarray | None, sesion: SesionEnVivo | None):
         return (anotado, panel, overlay, gr.skip(), gr.skip(), gr.skip(),
                 gr.skip(), gr.skip(), sesion)
 
+    anotado = _para_pantalla(anotado)
     return (anotado, panel, paneles.superposicion(metricas, sesion),
             paneles.tarjeta_estado(resultado, _titulo(sesion, resultado)),
             paneles.pastillas(sesion), _tabla_repeticiones(sesion),
@@ -329,6 +356,8 @@ def quien_ha_entrado(request: gr.Request | None = None) -> str:
 
 def listar_pacientes():
     """Tabla de pacientes con su actividad. Aguanta la base de datos vacía."""
+    if repository is None:
+        return pd.DataFrame(columns=vistas.COLUMNAS_PACIENTES), vistas.SIN_HISTORIAL
     datos = vistas.tabla_pacientes(repository)
     return datos, vistas.resumen_pacientes(datos)
 
@@ -364,6 +393,9 @@ def abrir_historial_paciente(datos, evento: gr.SelectData):
 def cargar_historial(paciente: str):
     if not paciente or not paciente.strip():
         raise gr.Error("Escribe el nombre del paciente.")
+    if repository is None:
+        raise gr.Error("Esta instalación no guarda historial: cada serie se "
+                       "muestra al terminar y no se conserva.")
     filas = repository.get_patient_history(paciente)
     if not filas:
         return pd.DataFrame(columns=COLUMNAS_HISTORIAL), None

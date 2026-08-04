@@ -78,7 +78,10 @@ print('MediaPipe inicializa y procesa')"
 # Usuario sin privilegios, dueño solo de lo que la aplicación escribe: `data/`.
 # Los pesos y el código se quedan de root en modo lectura, que es lo que hace
 # falta y evita duplicar 31 MB de capa por un `chown`.
-RUN useradd --create-home --uid 10001 physio \
+# uid 1000 y no otro: es el usuario con el que Hugging Face Spaces ejecuta los
+# contenedores y con el que monta su almacenamiento persistente. Fuera de HF da
+# igual, así que se usa el mismo en los dos sitios y no hay dos imágenes.
+RUN useradd --create-home --uid 1000 physio \
     && mkdir -p /app/data/audio /app/data/uploads /app/data/processed \
     && chown -R physio:physio /app/data
 USER physio

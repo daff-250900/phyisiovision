@@ -21,6 +21,10 @@ google-genai>=1.0,<3.0
 # cuenta de servicio, que es un alta distinta de la de Gemini.
 google-cloud-texttospeech>=2.16,<3.0
 
+# Persistencia en PostgreSQL (Cloud SQL). Opcional: sin PHYSIOVISION_BD la
+# aplicacion usa SQLite y no hace falta instalarla.
+psycopg[binary]>=3.1,<4.0
+
 # Solo para entrenamiento/modelo_xgboost_ex1.ipynb. El notebook funciona sin ellas
 # (usa busqueda aleatoria, importancia por permutacion y etiquetado por CSV).
 # jupyter>=1.0

@@ -10,6 +10,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+#: Dónde se escribe lo que la aplicación produce: base de pacientes, caché de
+#: audio y vídeos procesados. Es configurable porque no siempre puede vivir
+#: junto al código: en Hugging Face Spaces el almacenamiento persistente se
+#: monta en `/data`, y en un contenedor conviene que sea un volumen aparte.
+DATOS_DIR = Path(os.environ.get("PHYSIOVISION_DATOS", BASE_DIR / "data"))
+
 
 def cargar_dotenv(ruta: Path | None = None) -> dict[str, str]:
     """Vuelca `.env` en el entorno. Devuelve lo que haya cargado.
@@ -48,8 +54,8 @@ class Settings:
     model_path: Path = BASE_DIR / "models" / "xgboost_model.json"
     feature_contract_path: Path = BASE_DIR / "models" / "feature_contract.json"
     knowledge_base_path: Path = BASE_DIR / "knowledge_base" / "ejercicios.json"
-    database_path: Path = BASE_DIR / "data" / "physiovision.db"
-    processed_dir: Path = BASE_DIR / "data" / "processed"
+    database_path: Path = DATOS_DIR / "physiovision.db"
+    processed_dir: Path = DATOS_DIR / "processed"
     min_detection_confidence: float = 0.5
     min_tracking_confidence: float = 0.5
 
@@ -85,10 +91,20 @@ class Settings:
                                        "gemini-flash-lite-latest")
     gemini_timeout: float = float(os.environ.get("PHYSIOVISION_GEMINI_TIMEOUT", "6"))
 
+    # --- Historial -------------------------------------------------------- #
+    #: Si es falso, la aplicación **no escribe nada en disco sobre pacientes**:
+    #: ni nombres, ni series, ni resultados. Se pone a `0` en despliegues donde
+    #: el almacenamiento es efímero, y no por comodidad: guardar datos de salud
+    #: en un disco que se va a borrar reúne lo peor de las dos opciones, porque
+    #: mientras el contenedor vive esos datos existen y pueden acabar en una
+    #: instantánea o en un registro.
+    guarda_historial: bool = os.environ.get(
+        "PHYSIOVISION_HISTORIAL", "1").strip().lower() not in ("0", "false", "no")
+
     # --- Voz con Google Cloud Text-to-Speech (opcional) ---
     #: Caché de audio. Las consignas son un conjunto cerrado, así que tras la
     #: primera síntesis la reproducción es una lectura de archivo.
-    audio_dir: Path = BASE_DIR / "data" / "audio"
+    audio_dir: Path = DATOS_DIR / "audio"
 
 
 settings = Settings()

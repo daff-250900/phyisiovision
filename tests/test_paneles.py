@@ -175,3 +175,32 @@ def test_cronometro_formatea_minutos_y_segundos(segundos, esperado):
 def test_cronometro_marca_la_pausa():
     html = paneles.cronometro(_Sesion(en_pausa=True))
     assert "pv-reloj--pausa" in html and "en pausa" in html
+
+
+# -- coste del vídeo de vuelta ------------------------------------------------ #
+
+def test_el_fotograma_de_salida_se_reduce():
+    """Devolver 1920 px cuando en pantalla se ven 800 es tráfico pagado de más."""
+    import numpy as np
+
+    from ui.callbacks import ANCHO_SALIDA, _para_pantalla
+
+    grande = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    salida = _para_pantalla(grande)
+    assert salida.shape[1] == ANCHO_SALIDA
+    assert salida.shape[0] == round(1080 * ANCHO_SALIDA / 1920)   # sin deformar
+
+
+def test_un_fotograma_pequeno_no_se_toca():
+    import numpy as np
+
+    from ui.callbacks import _para_pantalla
+
+    chico = np.zeros((240, 320, 3), dtype=np.uint8)
+    assert _para_pantalla(chico) is chico
+
+
+def test_sin_fotograma_no_rompe():
+    from ui.callbacks import _para_pantalla
+
+    assert _para_pantalla(None) is None

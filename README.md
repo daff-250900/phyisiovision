@@ -1,3 +1,18 @@
+---
+title: PhysioVision
+emoji: 🏃
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Asistente visual para ejercicios de rehabilitación de hombro
+---
+
+<!-- La cabecera de arriba la necesita Hugging Face Spaces para construir el
+     Space con el Dockerfile de este repositorio. En GitHub se ve como una
+     tabla al principio del README; es el precio de tener un único repo. -->
+
 # PhysioVision con Gradio
 
 Asistente visual para ejercicios de rehabilitación de hombro. La cámara entra en
@@ -102,6 +117,10 @@ Todo opcional, en un `.env` en la raíz. La app arranca sin ninguna.
 | `PHYSIOVISION_TTS_MOTOR` | motor de voz (`auto`, `cloud`, `gemini`) |
 | `PHYSIOVISION_HOST` / `PHYSIOVISION_PORT` | dónde escucha el servidor |
 | `PHYSIOVISION_USUARIOS` | usuarios y resúmenes, si no se usa `data/usuarios.txt` |
+| `PHYSIOVISION_DATOS` | dónde escribir la base y la caché (por defecto `./data`) |
+| `PHYSIOVISION_ANCHO_SALIDA` | ancho del vídeo devuelto al navegador (960 px) |
+| `PHYSIOVISION_HISTORIAL` | `0` para no guardar nada de pacientes en disco |
+| `PHYSIOVISION_BD` | URL de PostgreSQL; sin ella, SQLite en `data/` |
 
 En local escucha solo en loopback: `0.0.0.0` expondría la cámara y el historial
 de pacientes a toda la red.
@@ -137,7 +156,9 @@ La imagen no lleva `data/`, `.env`, `entrenamiento/` ni las pruebas: pesa 1,03 G
 y `.dockerignore` excluye todo por defecto.
 
 Para un despliegue completo —TLS, volumen, secretos y copias— hay un
-`docker compose` listo y su manual en [`deploy/LEEME.md`](deploy/LEEME.md):
+`docker compose` listo y su manual en [`deploy/LEEME.md`](deploy/LEEME.md);
+para Hugging Face Spaces, [`deploy/HUGGINGFACE.md`](deploy/HUGGINGFACE.md), y para
+Google Cloud Run, [`deploy/cloudrun/LEEME.md`](deploy/cloudrun/LEEME.md):
 
 ```bash
 cp deploy/.env.ejemplo deploy/.env   # y rellénalo

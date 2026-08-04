@@ -88,6 +88,15 @@ def tabla_pacientes(repositorio) -> pd.DataFrame:
     return datos.fillna(0)
 
 
+#: Lo que se enseña cuando la instalación no guarda historial. Se dice, y no se
+#: deja una tabla vacía: una pantalla en blanco parece un fallo, y aquí es una
+#: decisión.
+SIN_HISTORIAL = (
+    '<div class="pv-vacio"><strong>Esta instalación no guarda historial.</strong>'
+    '<br>El resultado de cada serie se muestra al terminarla y no se conserva: '
+    'no se escribe en disco ningún dato de paciente.</div>')
+
+
 def resumen_pacientes(datos: pd.DataFrame) -> str:
     if datos.empty:
         return ('<div class="pv-vacio">Todavía no hay sesiones guardadas. '
@@ -160,7 +169,13 @@ def estado_del_sistema() -> str:
     filas.append(_fila("Pesos de MediaPipe", settings.mediapipe_variant, "ok",
                        "PHYSIOVISION_MEDIAPIPE"))
     filas.append(_fila("Tasa de la cámara", "30 Hz (la del entrenamiento)", "ok"))
-    filas.append(_fila("Base de datos", str(settings.database_path.name), "neutro"))
+    if settings.guarda_historial:
+        filas.append(_fila("Historial", f"se guarda en "
+                           f"{settings.database_path.name}", "ok",
+                           "PHYSIOVISION_HISTORIAL"))
+    else:
+        filas.append(_fila("Historial", "NO se guarda: nada de pacientes "
+                           "toca el disco", "aviso", "PHYSIOVISION_HISTORIAL"))
 
     return (
         '<table class="pv-ajustes"><thead><tr>'
