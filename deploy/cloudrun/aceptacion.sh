@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Prueba de aceptación contra el servicio ya desplegado en Cloud Run.
 #
-#   ./deploy/cloudrun/aceptacion.sh <url> <usuario> <contraseña>
+#   ./deploy/cloudrun/aceptacion.sh <url> <usuario> <contraseña> [--con-historial]
+#
+# `--con-historial` solo cambia el recordatorio del final: si se desplegó con
+# Cloud SQL, decir que no se guarda nada sería falso, y es justo el dato que
+# alguien podría repetirle a un paciente.
 set -uo pipefail
-URL="${1:?uso: aceptacion.sh <url> <usuario> <contraseña>}"
+URL="${1:?uso: aceptacion.sh <url> <usuario> <contraseña> [--con-historial]}"
 USUARIO="${2:?falta el usuario}"; CLAVE="${3:?falta la contraseña}"
+CON_HISTORIAL="${4:-}"
 GALLETA=$(mktemp); FALLOS=0
 ok(){ echo "  ✓ $1"; }
 mal(){ echo "  ✗ $1"; FALLOS=$((FALLOS+1)); }
@@ -27,7 +32,14 @@ curl -s -b "$GALLETA" "$URL/" | grep -q "pv-rail" \
 rm -f "$GALLETA"
 
 echo
-echo "Recordatorio: esta instalación NO guarda historial (PHYSIOVISION_HISTORIAL=0):"
-echo "cada serie se muestra al terminarla y no se escribe nada de pacientes."
+if [ "$CON_HISTORIAL" = "--con-historial" ]; then
+    echo "Recordatorio: esta instalación SÍ guarda historial en Cloud SQL."
+    echo "Comprueba los perfiles con:  python -m src.migracion estado"
+    echo "(con el proxy de Cloud SQL delante y PHYSIOVISION_BD apuntando a él)."
+else
+    echo "Recordatorio: esta instalación NO guarda historial (PHYSIOVISION_HISTORIAL=0):"
+    echo "cada serie se muestra al terminarla y no se escribe nada de pacientes."
+    echo "Sin base persistente, todas las cuentas del secreto son fisioterapeutas."
+fi
 [ "$FALLOS" -eq 0 ] && echo "Aceptación superada." || echo "$FALLOS fallo(s)."
 exit "$FALLOS"

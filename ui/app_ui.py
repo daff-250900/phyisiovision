@@ -34,8 +34,8 @@ from ui.callbacks import (
     iniciar_sesion,
     knowledge_base,
     listar_pacientes,
+    preparar_perfil,
     procesar_frame,
-    quien_ha_entrado,
     terminar_serie,
     tic_cronometro,
 )
@@ -84,8 +84,13 @@ JS_INICIO = """
     ? guardado === 'oscuro'
     : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.body.classList.toggle('dark', oscuro);
+
+  // En estrecho la barra es un cajón que se superpone al contenido, así que
+  // tiene que arrancar cerrada aunque en un escritorio se dejara abierta:
+  // abrir la app con el menú tapando la pantalla no es un estado de partida.
+  const estrecho = window.matchMedia('(max-width: 1100px)').matches;
   document.body.classList.toggle(
-    'pv-plegada', localStorage.getItem('pv-rail') === 'plegada');
+    'pv-plegada', estrecho || localStorage.getItem('pv-rail') === 'plegada');
 
   // Los botones de icono no tienen texto: sin esto, con lector de pantalla no
   // son nada, y con la tira plegada tampoco hay pista visual de qué hacen.
@@ -119,6 +124,21 @@ JS_PLEGAR = """
 () => {
   const plegada = document.body.classList.toggle('pv-plegada');
   localStorage.setItem('pv-rail', plegada ? 'plegada' : 'abierta');
+}
+"""
+
+#: Cierra el cajón lateral al navegar, solo en estrecho.
+#:
+#: En un escritorio la barra es una columna y quedarse abierta es lo correcto.
+#: En un móvil es un cajón que tapa la pantalla: navegar y dejarlo abierto
+#: escondería justo la vista que se acaba de elegir. No se toca
+#: `localStorage`: la preferencia guardada es la del escritorio y cerrar aquí
+#: no es una preferencia, es la consecuencia de haber navegado.
+JS_CERRAR_RAIL = """
+() => {
+  if (window.matchMedia('(max-width: 1100px)').matches) {
+    document.body.classList.add('pv-plegada');
+  }
 }
 """
 
@@ -488,7 +508,13 @@ def create_app(con_login: bool | None = None) -> gr.Blocks:
         # -- eventos --------------------------------------------------------- #
 
         demo.load(js=JS_INICIO)
-        demo.load(fn=quien_ha_entrado, inputs=None, outputs=[usuario_actual])
+        # Una sola llamada para todo lo que depende del perfil: quién ha
+        # entrado, si el nombre del paciente se escribe o viene dado, y qué
+        # entradas de la tira lateral se enseñan. En `demo.load` porque el
+        # perfil se conoce por petición, no al construir la interfaz: el mismo
+        # servidor atiende a los dos.
+        demo.load(fn=preparar_perfil, inputs=None,
+                  outputs=[usuario_actual, paciente] + botones_nav)
         boton_tema.click(js=JS_TEMA)
         boton_plegar.click(js=JS_PLEGAR)
 
@@ -503,6 +529,9 @@ def create_app(con_login: bool | None = None) -> gr.Blocks:
 
             botones_nav[indice].click(fn=_navegar, inputs=None,
                                       outputs=[pestanas] + botones_nav)
+            # Oyente aparte y no `js=` en el de arriba: ahí el JS transforma
+            # las entradas del callback, y este solo tiene que tocar el DOM.
+            botones_nav[indice].click(js=JS_CERRAR_RAIL)
 
         # Salidas de la sesión, en el orden en que las devuelven los
         # callbacks. Se nombran una vez para que abrir y cerrar sesión no se

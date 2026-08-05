@@ -6,9 +6,20 @@ import logging
 import os
 
 from src.auth import autenticar, exige_login, hay_usuarios
+from src.config import settings
 from ui.app_ui import CSS_PATH, MENSAJE_ACCESO, create_app
 from ui.iconos import RUTA_LOGO, reglas_css
 from ui.tema import crear_tema, variables_css
+
+# Los perfiles llegaron después que los datos. Esta llamada pasa a la base lo
+# que hubiera en `data/usuarios.txt` y ata cada serie antigua a su ficha de
+# paciente. Es idempotente, así que corre en cada arranque y nadie tiene que
+# acordarse de lanzarla; y no interrumpe si falla, porque quedarse sin arrancar
+# por una migración sería peor que arrancar con los perfiles a medio poblar.
+if settings.guarda_historial:
+    from src.migracion import migrar_en_arranque
+
+    migrar_en_arranque()
 
 demo = create_app()
 

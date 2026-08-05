@@ -3,8 +3,13 @@
 #
 #   ./deploy/cloudrun/secretos.sh <proyecto>
 #
-# Los usuarios se leen de data/usuarios.txt, que nunca sale del equipo: lo que
-# sube es el resumen derivado, no la contraseña.
+# Los usuarios salen de la instalación local —la tabla `usuarios` y, si aún
+# existe, data/usuarios.txt—, que nunca sale del equipo: lo que sube es el
+# resumen derivado, no la contraseña.
+#
+# El secreto es la **semilla** del despliegue. Con Cloud SQL, la migración del
+# primer arranque lo pasa a la tabla `usuarios` como fisioterapeutas; sin Cloud
+# SQL es la única fuente, porque no hay disco donde persistir una cuenta.
 set -euo pipefail
 PROYECTO="${1:?uso: secretos.sh <proyecto-gcp>}"
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -21,9 +26,19 @@ crear() {
     fi
 }
 
-USUARIOS=$(grep -vE '^\s*#|^\s*$' "$RAIZ/data/usuarios.txt" 2>/dev/null | paste -sd, -)
-[ -n "$USUARIOS" ] || { echo "No hay usuarios en data/usuarios.txt (python -m src.auth <usuario>)" >&2; exit 1; }
+# `exportar` une la tabla `usuarios` y el archivo heredado, que es exactamente
+# lo que admite el login. Se prefiere el intérprete del entorno virtual si
+# existe: fuera de él faltan las dependencias del proyecto.
+PYTHON="$RAIZ/.venv/bin/python"
+[ -x "$PYTHON" ] || PYTHON=python3
+USUARIOS=$(cd "$RAIZ" && "$PYTHON" -m src.auth exportar 2>/dev/null || true)
+[ -n "$USUARIOS" ] || {
+    echo "No hay ninguna cuenta que subir." >&2
+    echo "  Crea una con:  python -m src.auth crear <usuario> --rol fisioterapeuta" >&2
+    exit 1
+}
 crear physiovision-usuarios "$USUARIOS"
+echo "  cuentas subidas: $(printf '%s' "$USUARIOS" | tr ',' '\n' | cut -d: -f1 | paste -sd' ' -)"
 
 CLAVE=$(grep -E '^GEMINI_API_KEY=' "$RAIZ/.env" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'')
 crear physiovision-gemini "${CLAVE:-sin-configurar}"

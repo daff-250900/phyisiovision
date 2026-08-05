@@ -5,27 +5,31 @@ control de acceso no es una opción. Este módulo aporta lo mínimo para cerrarl
 usuarios con contraseña, verificados contra un resumen derivado, nunca contra la
 contraseña en claro.
 
-**Dónde viven los usuarios.** En la variable `PHYSIOVISION_USUARIOS` (una línea
-por usuario, o separadas por comas) o en el archivo que indique
-`PHYSIOVISION_USUARIOS_ARCHIVO`, por defecto `data/usuarios.txt`. El formato de
-cada línea es:
+**Dónde viven los usuarios.** En la tabla `usuarios` de la base de datos, con
+su perfil: `fisioterapeuta` o `paciente`. Antes vivían en un archivo de texto y
+ese camino sigue abierto, pero solo como **semilla**: `PHYSIOVISION_USUARIOS` o
+el archivo que indique `PHYSIOVISION_USUARIOS_ARCHIVO` —por defecto
+`data/usuarios.txt`— se leen si la tabla está vacía, para que una instalación
+antigua arranque sin quedarse fuera. `src/migracion.py` los pasa a la base. El
+formato de cada línea es:
 
     usuario:pbkdf2_sha256$240000$<sal_hex>$<resumen_hex>
 
 **Cómo se crea uno.** Sin escribir la contraseña en ningún archivo ni en el
 historial de la terminal:
 
-    python -m src.auth dafne
+    python -m src.auth crear dafne --rol fisioterapeuta
+    python -m src.auth crear maria --rol paciente --paciente "María Gómez"
 
-que pide la contraseña por teclado e imprime la línea que hay que pegar en
-`.env` o en `data/usuarios.txt`.
+que piden la contraseña por teclado y dan de alta la cuenta en la base.
 
 **Qué más hace**: frena los intentos repetidos (cinco fallos cierran la puerta
 un rato, y el rato crece si se insiste) y deja constancia de cada acceso en el
 registro, acertado o no, sin escribir nunca la contraseña.
 
-**Qué NO hace**: roles ni caducidad de contraseñas. Para uso clínico real hacen
-falta las dos, y una auditoría persistente en vez de un registro a `stdout`.
+**Qué NO hace**: caducidad de contraseñas ni segundo factor. Para uso clínico
+real hacen falta ambas, y una auditoría persistente en vez de un registro a
+`stdout`.
 """
 
 from __future__ import annotations
@@ -143,13 +147,17 @@ def _lineas(texto: str) -> list[str]:
     return [l.strip() for l in crudas if l.strip() and not l.strip().startswith("#")]
 
 
-def cargar_usuarios(valor: str | None = None,
-                    archivo: str | Path | None = None) -> dict[str, str]:
-    """Usuarios configurados, como `{nombre: resumen}`.
+def usuarios_de_archivo(valor: str | None = None,
+                        archivo: str | Path | None = None) -> dict[str, str]:
+    """Usuarios del archivo o de la variable de entorno, `{nombre: resumen}`.
 
     Precedencia: el argumento, luego `PHYSIOVISION_USUARIOS`, luego el archivo.
     Las entradas mal formadas se ignoran en silencio: una línea rota no puede
     tumbar el arranque de la aplicación, y admitirla sería peor.
+
+    Esta es la fuente **heredada**. La actual es la tabla `usuarios`; esta se
+    conserva como semilla para migrar y para no dejar fuera a una instalación
+    que aún no haya migrado.
     """
     if valor is None:
         valor = os.environ.get("PHYSIOVISION_USUARIOS", "")
@@ -164,6 +172,86 @@ def cargar_usuarios(valor: str | None = None,
         if separador and nombre.strip() and resumen.strip().startswith(ALGORITMO):
             usuarios[nombre.strip()] = resumen.strip()
     return usuarios
+
+
+def _repositorio():
+    """Repositorio de usuarios, o `None` si la base no está disponible.
+
+    No se cachea a propósito: las pruebas cambian `PHYSIOVISION_BD` y la ruta
+    de la base entre casos, y un repositorio guardado en una global las haría
+    escribir todas en la primera que se hubiera abierto.
+    """
+    try:
+        from src.storage import UsuarioRepository
+
+        return UsuarioRepository()
+    except Exception:                      # base bloqueada, disco de solo lectura…
+        logger.exception("no se pudo abrir la tabla de usuarios")
+        return None
+
+
+def cargar_usuarios(valor: str | None = None,
+                    archivo: str | Path | None = None) -> dict[str, str]:
+    """Usuarios que pueden entrar, como `{nombre: resumen}`.
+
+    Se **unen las dos fuentes**, y no es un arreglo: son dos cosas distintas.
+    `PHYSIOVISION_USUARIOS` y el archivo son configuración del despliegue —en
+    Cloud Run llegan como secreto, y ahí no hay disco donde guardar una base—,
+    mientras que la tabla `usuarios` es lo que se da de alta desde la propia
+    aplicación. Quedarse solo con una dejaría fuera a alguien: si mandara la
+    base, un despliegue configurado por secreto no podría entrar; si mandara el
+    archivo, las cuentas creadas con `python -m src.auth crear` no valdrían.
+
+    En caso de coincidencia de nombre manda la base, que es donde aterriza un
+    cambio de contraseña.
+
+    Los argumentos fuerzan la fuente heredada, y existen para las pruebas y
+    para `src/migracion.py`.
+    """
+    if valor is not None or archivo is not None:
+        return usuarios_de_archivo(valor, archivo)
+
+    usuarios = usuarios_de_archivo()
+    repositorio = _repositorio()
+    if repositorio is not None:
+        usuarios.update(repositorio.resumenes())
+    return usuarios
+
+
+def perfil(usuario: str) -> dict[str, object] | None:
+    """Ficha de la cuenta: usuario, rol, nombre y ficha de paciente si la hay.
+
+    Es lo que la interfaz consulta en cada petición para decidir qué enseñar.
+    Devuelve `None` si la cuenta no existe.
+
+    Un usuario que solo esté en el archivo heredado —todavía sin migrar— se
+    considera **fisioterapeuta**: es lo que era antes de que hubiera perfiles,
+    porque quien manejaba la aplicación era el profesional.
+    """
+    from src.storage import ROL_FISIO
+
+    nombre = (usuario or "").strip()
+    if not nombre:
+        return None
+
+    repositorio = _repositorio()
+    if repositorio is not None:
+        cuenta = repositorio.obtener(nombre)
+        if cuenta is not None:
+            ficha = None
+            if cuenta["rol"] != ROL_FISIO:
+                from src.storage import PatientRepository
+
+                ficha = PatientRepository().por_usuario(int(cuenta["id"]))
+            return {"id": int(cuenta["id"]), "usuario": cuenta["usuario"],
+                    "rol": cuenta["rol"], "nombre": cuenta["nombre"],
+                    "paciente_id": ficha["id"] if ficha else None,
+                    "paciente_nombre": ficha["nombre"] if ficha else None}
+
+    if nombre in usuarios_de_archivo():
+        return {"id": None, "usuario": nombre, "rol": ROL_FISIO, "nombre": nombre,
+                "paciente_id": None, "paciente_nombre": None}
+    return None
 
 
 def hay_usuarios() -> bool:
@@ -218,24 +306,131 @@ def exige_login(host: str) -> bool:
     return host not in ("127.0.0.1", "localhost", "::1")
 
 
-def _cli() -> int:
+def _pedir_contrasena() -> str | None:
     import getpass
-    import sys
 
-    nombre = sys.argv[1] if len(sys.argv) > 1 else input("Usuario: ").strip()
-    if not nombre:
-        print("Hace falta un nombre de usuario.")
-        return 1
     contrasena = getpass.getpass("Contraseña: ")
     if len(contrasena) < 8:
         print("Usa al menos 8 caracteres.")
-        return 1
+        return None
     if contrasena != getpass.getpass("Repítela: "):
         print("No coinciden.")
+        return None
+    return contrasena
+
+
+def _cli() -> int:
+    """Alta y listado de cuentas.
+
+        python -m src.auth crear <usuario> --rol fisioterapeuta
+        python -m src.auth crear <usuario> --rol paciente --paciente "María Gómez"
+        python -m src.auth listar
+
+    La forma antigua —`python -m src.auth <usuario>`, que imprimía una línea
+    para pegar en el archivo— se conserva porque es la que está escrita en el
+    README y en la documentación del proyecto.
+    """
+    import argparse
+    import sys
+
+    from src.storage import PatientRepository, ROL_FISIO, ROL_PACIENTE, \
+        UsuarioRepository
+
+    analizador = argparse.ArgumentParser(prog="python -m src.auth")
+    ordenes = analizador.add_subparsers(dest="orden")
+
+    crear = ordenes.add_parser("crear", help="da de alta una cuenta en la base")
+    crear.add_argument("usuario")
+    crear.add_argument("--rol", choices=[ROL_FISIO, ROL_PACIENTE], default=ROL_FISIO)
+    crear.add_argument("--nombre", help="nombre para mostrar; por defecto, el usuario")
+    crear.add_argument("--paciente", help="ficha de paciente a la que se asocia "
+                                          "la cuenta (solo con --rol paciente)")
+    crear.add_argument("--fisio", help="usuario del fisioterapeuta que lo atiende "
+                                       "(solo con --rol paciente)")
+
+    ordenes.add_parser("listar", help="cuentas activas y su perfil")
+    ordenes.add_parser(
+        "exportar", help="vuelca las cuentas en el formato de PHYSIOVISION_USUARIOS")
+
+    resumen_cmd = ordenes.add_parser(
+        "resumen", help="imprime la línea para data/usuarios.txt (forma antigua)")
+    resumen_cmd.add_argument("usuario")
+
+    # Forma antigua: `python -m src.auth dafne` sin subcomando.
+    argumentos = sys.argv[1:]
+    if argumentos and argumentos[0] not in ("crear", "listar", "resumen",
+                                            "exportar", "-h", "--help"):
+        argumentos = ["resumen", *argumentos]
+    opciones = analizador.parse_args(argumentos)
+
+    if opciones.orden == "exportar":
+        # Semilla para un despliegue sin disco persistente: se vuelcan **las dos
+        # fuentes**, base y archivo, porque es lo mismo que admite el login. Sale
+        # el resumen derivado, nunca la contraseña.
+        usuarios = cargar_usuarios()
+        if not usuarios:
+            print("No hay ninguna cuenta que exportar.", file=sys.stderr)
+            return 1
+        print(",".join(f"{nombre}:{resumen}"
+                       for nombre, resumen in sorted(usuarios.items())))
+        return 0
+
+    if opciones.orden in (None, "listar"):
+        usuarios = UsuarioRepository().listar()
+        if not usuarios:
+            print("No hay cuentas en la base. Crea una con:\n"
+                  "  python -m src.auth crear <usuario> --rol fisioterapeuta")
+            return 0
+        print(f"{'usuario':20s} {'perfil':16s} nombre")
+        for cuenta in usuarios:
+            print(f"{cuenta['usuario']:20s} {cuenta['rol']:16s} {cuenta['nombre']}")
+        return 0
+
+    if opciones.orden == "resumen":
+        contrasena = _pedir_contrasena()
+        if contrasena is None:
+            return 1
+        print("\nPega esta línea en data/usuarios.txt "
+              "(o en PHYSIOVISION_USUARIOS):\n")
+        print(f"{opciones.usuario}:{resumir(contrasena)}")
+        print("\nLo recomendable es dar de alta la cuenta en la base:\n"
+              f"  python -m src.auth crear {opciones.usuario} --rol fisioterapeuta")
+        return 0
+
+    # crear
+    usuarios = UsuarioRepository()
+    if usuarios.obtener(opciones.usuario):
+        print(f"Ya existe una cuenta activa para {opciones.usuario!r}.")
         return 1
 
-    print("\nPega esta línea en data/usuarios.txt (o en PHYSIOVISION_USUARIOS):\n")
-    print(f"{nombre}:{resumir(contrasena)}")
+    fisio_id = None
+    if opciones.fisio:
+        cuenta_fisio = usuarios.obtener(opciones.fisio)
+        if cuenta_fisio is None or cuenta_fisio["rol"] != ROL_FISIO:
+            print(f"No hay ningún fisioterapeuta llamado {opciones.fisio!r}.")
+            return 1
+        fisio_id = int(cuenta_fisio["id"])
+
+    contrasena = _pedir_contrasena()
+    if contrasena is None:
+        return 1
+
+    identificador = usuarios.crear(opciones.usuario, resumir(contrasena),
+                                   opciones.rol, opciones.nombre)
+    print(f"Alta de {opciones.usuario!r} como {opciones.rol}.")
+
+    if opciones.rol == ROL_PACIENTE:
+        pacientes = PatientRepository()
+        nombre_ficha = opciones.paciente or opciones.nombre or opciones.usuario
+        ficha = pacientes.obtener_o_crear(nombre_ficha, fisio_id=fisio_id)
+        pacientes.asignar_usuario(int(ficha["id"]), identificador)
+        if fisio_id is not None and ficha.get("fisio_id") is None:
+            pacientes.asignar_fisio(int(ficha["id"]), fisio_id)
+        print(f"Asociada a la ficha {nombre_ficha!r} (id {ficha['id']}).")
+        if fisio_id is None and ficha.get("fisio_id") is None:
+            print("Aviso: la ficha no tiene fisioterapeuta asignado, así que no "
+                  "aparecerá en la vista de Pacientes de nadie. Asígnalo con "
+                  "--fisio <usuario>.")
     return 0
 
 

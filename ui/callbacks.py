@@ -11,10 +11,11 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
+from src.auth import perfil
 from src.config import settings
 from src.rag import KnowledgeBase
 from src.sesion_vivo import FASES_LEGIBLES, SesionEnVivo
-from src.storage import SessionRepository
+from src.storage import PatientRepository, ROL_FISIO, ROL_PACIENTE, SessionRepository
 from ui import paneles, vistas
 
 # Estos dos objetos sí pueden compartirse: son de solo lectura y no guardan
@@ -24,6 +25,34 @@ knowledge_base = KnowledgeBase()
 # Sin historial no se crea siquiera el repositorio: así no hay archivo de base
 # de datos que exista «por si acaso».
 repository = SessionRepository() if settings.guarda_historial else None
+patients = PatientRepository() if settings.guarda_historial else None
+
+
+# --------------------------------------------------------------------------- #
+# Perfiles
+#
+# El perfil **no se guarda en un `gr.State`**: se resuelve en cada petición a
+# partir de `request.username`, que es lo único que el navegador no puede
+# falsear —lo pone Gradio tras validar la contraseña—. Un estado del cliente
+# sería una credencial editable desde las herramientas de desarrollo.
+# --------------------------------------------------------------------------- #
+
+def perfil_de(request: gr.Request | None) -> dict[str, object] | None:
+    """Perfil de quien hace la petición, o `None` sin login.
+
+    Sin login —arranque local— no hay a quién atribuir nada y no se filtra
+    nada: es la máquina de quien desarrolla, y ahí exigir un perfil solo
+    estorbaría.
+    """
+    usuario = getattr(request, "username", None) if request else None
+    return perfil(usuario) if usuario else None
+
+
+def _fisio_id(perfil_actual: dict[str, object] | None) -> int | None:
+    """Por qué fisioterapeuta se filtra. `None` = sin filtro."""
+    if perfil_actual and perfil_actual.get("rol") == ROL_FISIO:
+        return perfil_actual.get("id")
+    return None
 
 COLUMNAS_HISTORIAL = ["Fecha", "Ejercicio", "Resultado", "Confianza",
                       "ROM máx.", "Reps", "Correctas", "Lado"]
@@ -62,8 +91,16 @@ def ejercicios_disponibles() -> list[tuple[str, str]]:
 # --------------------------------------------------------------------------- #
 
 def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
-                   sesion: SesionEnVivo | None):
+                   sesion: SesionEnVivo | None,
+                   request: gr.Request | None = None):
     """Crea la sesión. Cada usuario tiene la suya en su `gr.State`."""
+    # Con perfil de paciente el nombre no se pide: es el suyo, y aceptar el del
+    # formulario permitiría guardar series en el historial de otra persona con
+    # solo escribir su nombre.
+    actual = perfil_de(request)
+    if actual and actual.get("rol") == ROL_PACIENTE:
+        paciente = str(actual.get("paciente_nombre") or actual.get("nombre") or "")
+
     if not paciente or not paciente.strip():
         raise gr.Error("Escribe el nombre o identificador del paciente.")
     if not ejercicio:
@@ -103,7 +140,34 @@ def iniciar_sesion(paciente: str, ejercicio: str, brazo: str,
             gr.update(elem_classes=BOTON_PAUSA))
 
 
-def terminar_serie(sesion: SesionEnVivo | None):
+def _ficha_de_la_serie(resumen: dict, actual: dict[str, object] | None
+                       ) -> tuple[int | None, int | None]:
+    """`(paciente_id, fisio_id)` con los que se guarda una serie.
+
+    El paciente que entra con su cuenta escribe siempre en su propia ficha. El
+    fisioterapeuta escribe en la ficha de ese nombre entre las suyas, y la crea
+    si es la primera vez: dar de alta a alguien es empezar a medirle.
+    """
+    if patients is None or actual is None:
+        return None, None
+
+    if actual.get("rol") == ROL_PACIENTE:
+        # El fisio que consta es el que tiene asignado la ficha, no el propio
+        # paciente: quien le sigue el tratamiento no cambia porque entrene solo.
+        ficha = (patients.por_id(int(actual["paciente_id"]))
+                 if actual.get("paciente_id") else None)
+        if ficha is None:
+            return None, None
+        return int(ficha["id"]), ficha.get("fisio_id")
+
+    fisio_id = actual.get("id")
+    ficha = patients.obtener_o_crear(str(resumen.get("paciente", "")),
+                                     fisio_id=fisio_id)
+    return int(ficha["id"]), fisio_id
+
+
+def terminar_serie(sesion: SesionEnVivo | None,
+                   request: gr.Request | None = None):
     """Cierra la serie, guarda el resumen y libera el detector."""
     if sesion is None:
         raise gr.Error("No hay ninguna sesión activa.")
@@ -116,7 +180,9 @@ def terminar_serie(sesion: SesionEnVivo | None):
 
     if repository is not None:
         try:
-            repository.save_summary(resumen)
+            paciente_id, fisio_id = _ficha_de_la_serie(resumen, perfil_de(request))
+            repository.save_summary(resumen, paciente_id=paciente_id,
+                                    fisio_id=fisio_id)
         except Exception as exc:                  # no perder la sesión por la BD
             gr.Warning(f"No se pudo guardar en el historial: {exc}")
 
@@ -344,21 +410,86 @@ def _markdown_resumen(resumen: dict[str, Any], texto_ia: str | None = None) -> s
 # --------------------------------------------------------------------------- #
 
 def quien_ha_entrado(request: gr.Request | None = None) -> str:
-    """Rótulo con el usuario de la sesión de navegador.
+    """Rótulo con el usuario de la sesión de navegador y su perfil.
 
     `request.username` solo trae nombre cuando el login está activo. Sin login
     —arranque local— se dice explícitamente, para que nadie confunda una app
     abierta con una cerrada.
     """
     usuario = getattr(request, "username", None) if request else None
-    return paneles.tarjeta_usuario(usuario)
+    actual = perfil(usuario) if usuario else None
+    return paneles.tarjeta_usuario(usuario,
+                                   rol=actual.get("rol") if actual else None)
 
 
-def listar_pacientes():
-    """Tabla de pacientes con su actividad. Aguanta la base de datos vacía."""
+#: La única entrada que no ve el paciente: «Pacientes» es la lista de otras
+#: personas, y no hay forma de enseñársela que no sea enseñar quién más se está
+#: tratando aquí.
+#:
+#: «Configuración» sí la ve. No guarda nada de nadie: dice si hay modelo, si hay
+#: voz y con qué tema se pinta la interfaz. Que el paciente pueda comprobar por
+#: qué su sesión va en silencio, o cambiar a modo oscuro, es parte de usar la
+#: aplicación, no de administrarla.
+NAV_SOLO_FISIO = ("pacientes",)
+
+
+def preparar_perfil(request: gr.Request | None = None):
+    """Adapta la interfaz al perfil de quien acaba de entrar.
+
+    Se ejecuta en `demo.load`, una vez por pestaña de navegador, y devuelve
+    actualizaciones de visibilidad. La misma aplicación sirve a los dos
+    perfiles: construir dos interfaces distintas obligaría a levantar dos
+    servidores o a decidir el perfil antes del login, que es cuando todavía no
+    se sabe quién es.
+
+    **Esto es presentación, no seguridad.** Esconder un botón no protege nada:
+    quien hace la comprobación de verdad es cada callback, que vuelve a
+    resolver el perfil desde `request.username`. Las dos capas hacen falta —una
+    para no enseñar lo que no toca y otra para no servirlo—.
+
+    Returns:
+        `(tarjeta de usuario, aviso del campo paciente, *visibilidad de la tira)`.
+    """
+    usuario = getattr(request, "username", None) if request else None
+    actual = perfil(usuario) if usuario else None
+    rol = actual.get("rol") if actual else None
+    es_paciente = rol == ROL_PACIENTE
+
+    tarjeta = paneles.tarjeta_usuario(usuario, rol=rol)
+
+    # Con perfil de paciente el nombre ni se escribe ni se elige: es el suyo.
+    nombre = str(actual.get("paciente_nombre") or actual.get("nombre") or "") \
+        if es_paciente else ""
+    campo = (gr.update(value=nombre, interactive=False,
+                       info="Tus sesiones se guardan en tu historial.")
+             if es_paciente else gr.update())
+
+    visibilidad = [gr.update(visible=not (es_paciente and clave in NAV_SOLO_FISIO))
+                   for clave, _ in _nav()]
+    return [tarjeta, campo, *visibilidad]
+
+
+def _nav():
+    """`ui.app_ui.NAV`, importado tarde para no cerrar el ciclo de imports."""
+    from ui.app_ui import NAV
+
+    return NAV
+
+
+def listar_pacientes(request: gr.Request | None = None):
+    """Tabla de pacientes con su actividad. Aguanta la base de datos vacía.
+
+    Cada fisioterapeuta ve los suyos. Un paciente no llega hasta aquí: la
+    entrada de la tira lateral no se le muestra, y aun así el filtro devolvería
+    su propia ficha y nada más.
+    """
     if repository is None:
         return pd.DataFrame(columns=vistas.COLUMNAS_PACIENTES), vistas.SIN_HISTORIAL
-    datos = vistas.tabla_pacientes(repository)
+    actual = perfil_de(request)
+    if actual and actual.get("rol") == ROL_PACIENTE:
+        return (pd.DataFrame(columns=vistas.COLUMNAS_PACIENTES),
+                vistas.SOLO_FISIO)
+    datos = vistas.tabla_pacientes(repository, fisio_id=_fisio_id(actual))
     return datos, vistas.resumen_pacientes(datos)
 
 
@@ -367,14 +498,15 @@ def estado_del_sistema() -> str:
     return vistas.estado_del_sistema()
 
 
-def abrir_historial_paciente(datos, evento: gr.SelectData):
+def abrir_historial_paciente(datos, evento: gr.SelectData,
+                             request: gr.Request | None = None):
     """Al elegir una fila de Pacientes, salta a su historial ya cargado."""
     fila = int(evento.index[0]) if evento.index else 0
     nombre = ""
     if isinstance(datos, pd.DataFrame) and 0 <= fila < len(datos):
         nombre = str(datos.iloc[fila, 0])
 
-    tabla, figura = (cargar_historial(nombre) if nombre.strip()
+    tabla, figura = (cargar_historial(nombre, request) if nombre.strip()
                      else (pd.DataFrame(columns=COLUMNAS_HISTORIAL), None))
     # Las últimas salidas son la pestaña y los botones de la tira lateral: la
     # entrada activa tiene que moverse con la navegación. El import va aquí
@@ -390,13 +522,32 @@ def abrir_historial_paciente(datos, evento: gr.SelectData):
 # Historial
 # --------------------------------------------------------------------------- #
 
-def cargar_historial(paciente: str):
+def cargar_historial(paciente: str, request: gr.Request | None = None):
+    """Historial de un paciente, limitado a lo que el perfil puede ver.
+
+    Con perfil de paciente se ignora lo que se escriba en el cuadro y se
+    consulta su ficha: el filtro no puede depender de un texto que llega del
+    navegador. Con perfil de fisioterapeuta se busca por nombre, pero solo
+    entre sus pacientes.
+    """
+    actual = perfil_de(request)
+    es_paciente = bool(actual and actual.get("rol") == ROL_PACIENTE)
+
+    if es_paciente:
+        paciente = str(actual.get("paciente_nombre") or actual.get("nombre") or "")
     if not paciente or not paciente.strip():
         raise gr.Error("Escribe el nombre del paciente.")
     if repository is None:
         raise gr.Error("Esta instalación no guarda historial: cada serie se "
                        "muestra al terminar y no se conserva.")
-    filas = repository.get_patient_history(paciente)
+
+    if es_paciente:
+        ficha_id = actual.get("paciente_id")
+        filas = (repository.get_patient_history(paciente, paciente_id=int(ficha_id))
+                 if ficha_id else [])
+    else:
+        filas = repository.get_patient_history(paciente,
+                                               fisio_id=_fisio_id(actual))
     if not filas:
         return pd.DataFrame(columns=COLUMNAS_HISTORIAL), None
 

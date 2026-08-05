@@ -252,17 +252,24 @@ def cabecera_vacia() -> str:
             '<strong>—</strong></div></div>')
 
 
-def tarjeta_usuario(usuario: str | None) -> str:
-    """Quién está usando la aplicación, al pie de la barra lateral."""
+#: Cómo se nombra cada perfil al pie de la barra. El rol se enseña siempre que
+#: se conoce: quien entra tiene que ver con qué permisos está trabajando, y en
+#: una app con dos perfiles esa duda es continua.
+PERFILES_LEGIBLES = {"fisioterapeuta": "fisioterapeuta", "paciente": "paciente"}
+
+
+def tarjeta_usuario(usuario: str | None, rol: str | None = None) -> str:
+    """Quién está usando la aplicación y con qué perfil, al pie de la barra."""
     if not usuario:
         return ('<div class="pv-usuario pv-usuario--abierto">'
                 '<span class="pv-usuario__ini">!</span>'
                 '<div><strong>Sin autenticación</strong>'
                 '<em>arranque local</em></div></div>')
+    pie = PERFILES_LEGIBLES.get(rol or "", "sesión iniciada")
     return (f'<div class="pv-usuario">'
             f'<span class="pv-usuario__ini">{html.escape(usuario[:1].upper())}</span>'
             f'<div><strong>{html.escape(usuario)}</strong>'
-            f'<em>sesión iniciada</em></div></div>')
+            f'<em>{html.escape(pie)}</em></div></div>')
 
 
 def cronometro(sesion) -> str:

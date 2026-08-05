@@ -73,9 +73,13 @@ def tarjetas_ejercicios(kb: KnowledgeBase) -> str:
 # Pacientes
 # --------------------------------------------------------------------------- #
 
-def tabla_pacientes(repositorio) -> pd.DataFrame:
-    """Listado con la actividad de cada paciente. Vacío si no hay sesiones."""
-    filas = repositorio.list_patients()
+def tabla_pacientes(repositorio, fisio_id: int | None = None) -> pd.DataFrame:
+    """Listado con la actividad de cada paciente. Vacío si no hay sesiones.
+
+    Con `fisio_id` se limita a los pacientes de ese profesional; sin él —el
+    arranque local sin login— se listan todos.
+    """
+    filas = repositorio.list_patients(fisio_id=fisio_id)
     if not filas:
         return pd.DataFrame(columns=COLUMNAS_PACIENTES)
 
@@ -87,6 +91,13 @@ def tabla_pacientes(repositorio) -> pd.DataFrame:
     datos.columns = COLUMNAS_PACIENTES
     return datos.fillna(0)
 
+
+#: La vista de Pacientes es del profesional. A un paciente no se le enseña la
+#: tabla vacía —parecería que no tiene datos—, se le dice de quién es la vista.
+SOLO_FISIO = (
+    '<div class="pv-vacio"><strong>Vista del fisioterapeuta.</strong><br>'
+    'Tu historial y tu progreso están en <strong>Historial</strong> y '
+    '<strong>Progreso</strong>, con tus propias sesiones.</div>')
 
 #: Lo que se enseña cuando la instalación no guarda historial. Se dice, y no se
 #: deja una tabla vacía: una pantalla en blanco parece un fallo, y aquí es una

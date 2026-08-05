@@ -189,6 +189,18 @@ footer {
     box-shadow: inset 3px 0 0 0 var(--pv-acento) !important;
 }
 
+/* Una entrada oculta se queda oculta.
+ *
+ * El `display: flex !important` de arriba hace falta para que el icono y la
+ * etiqueta se alineen, pero le ganaba a la clase `hidden` que pone Gradio al
+ * marcar un componente como `visible=False`: el perfil de paciente seguía
+ * viendo «Pacientes» y «Configuración» en la tira, aunque los callbacks ya no
+ * le sirvieran nada. */
+.pv-nav.hidden,
+.pv-nav.hidden button {
+    display: none !important;
+}
+
 /* --------------------------------------------------------------------------
  * 5. Botones de icono (tema, pliegue)
  * ----------------------------------------------------------------------- */
@@ -323,12 +335,11 @@ body.dark .pv-tema::before {
  * 8. Adaptación a pantallas estrechas
  * ----------------------------------------------------------------------- */
 
-@media (max-width: 1100px) {
-    /* En estrecho la barra arranca escondida; se abre con el mismo botón. */
-    .pv-rail {
-        display: none !important;
-    }
-}
+/* Por debajo de 1100 px la barra lateral deja de ser una columna y pasa a ser
+ * un cajón sobre el contenido. Las reglas están al final del archivo, en la
+ * sección 20: tienen que ganar a la sección 16, que es la que la esconde
+ * cuando está plegada, y entre selectores de la misma especificidad manda el
+ * orden. */
 
 @media (max-width: 860px) {
     .pv-header {
@@ -1145,11 +1156,7 @@ body.pv-plegada .pv-header__marca {
     border-right-color: transparent;
 }
 
-@media (max-width: 1100px) {
-    .pv-plegar {
-        left: 14px;
-    }
-}
+/* La posición del botón en estrecho la fija la sección 8, junto con el cajón. */
 
 /* --------------------------------------------------------------------------
  * 17. Quién ha entrado
@@ -1201,4 +1208,406 @@ body.pv-plegada .pv-header__marca {
 
 .pv-usuario--abierto .pv-usuario__ini {
     background: var(--pv-atencion);
+}
+
+/* --------------------------------------------------------------------------
+ * 18. Teléfonos
+ *
+ * Por debajo de 720 px la cabecera deja de ser una fila. Los cuatro controles
+ * de inicio no caben en un móvil y, sin envolver, el botón de «Iniciar sesión»
+ * se salía de la pantalla: medido a 390 px, su borde derecho quedaba en 534.
+ * Es decir, la acción principal de la app era inalcanzable en un teléfono.
+ *
+ * El otro criterio de esta sección es el dedo: nada pulsable baja de 44 px y
+ * ningún campo baja de 16 px de letra, porque Safari en iOS hace zoom al
+ * enfocar un campo más pequeño y deja la página descuadrada al volver.
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+
+    /* -- cabecera ------------------------------------------------------- */
+
+    .pv-header {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        padding: 10px 14px !important;
+    }
+
+    /* Sin la tira lateral debajo, la marca ya no tiene con qué alinearse ni
+     * de qué separarse. */
+    .pv-header__marca {
+        padding: 0 !important;
+        border-right: 0 !important;
+    }
+
+    .pv-marca {
+        gap: 10px;
+    }
+
+    .pv-marca__nombre {
+        font-size: 21px;
+    }
+
+    /* El `flex-basis` de la sección 2 también hay que bajarlo: en un
+     * contenedor flex manda él, no `width`. */
+    .pv-marca .pv-marca__logo,
+    .pv-marca span.pv-marca__logo {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+    }
+
+    /* Los controles pasan a columna y ocupan el ancho entero: repartidos en
+     * fila, a 390 px el campo de paciente se quedaba en 132 px y recortaba
+     * hasta su propio texto de ayuda. */
+    .pv-header__zona {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    .pv-header__zona > * {
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    /* Gradio agrupa los campos contiguos en un `.form` propio, así que no
+     * basta con estirar los hijos directos de la fila: los tres controles
+     * viven un nivel más abajo y ahí es donde se reparten el ancho. */
+    .pv-header__zona .form {
+        flex-wrap: wrap !important;
+        width: 100% !important;
+    }
+
+    .pv-header__zona .form > * {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Iniciar es la acción principal de la pantalla de arranque: ancho
+     * completo y alto de dedo. */
+    .pv-header__zona .pv-ico--iniciar,
+    .pv-header__zona .pv-ico--iniciar button {
+        width: 100% !important;
+        min-height: 46px !important;
+    }
+
+    /* -- cabecera con la sesión en marcha -------------------------------- */
+
+    /* Mientras se ejercita, la pantalla es del vídeo. Estirar aquí los cuatro
+     * elementos a lo ancho dejaba una cabecera de 415 px en un teléfono de
+     * 667: el vídeo empezaba fuera de la pantalla, que es tanto como no
+     * tenerlo. Así que quién y qué comparten línea con el cronómetro, y las
+     * dos acciones comparten la siguiente.
+     *
+     * `:has(.pv-sesion)` distingue el estado de forma fiable: Gradio no monta
+     * la fila de sesión en el DOM hasta que la sesión arranca (comprobado en
+     * el navegador, no supuesto). Si el navegador no soporta `:has`, la regla
+     * se ignora y solo se pierde compacidad. */
+    .pv-header:has(.pv-sesion) .pv-header__marca {
+        display: none !important;
+    }
+
+    .pv-header__zona > *:has(.pv-sesion) {
+        flex: 1 1 58% !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+
+    .pv-header__zona > *:has(.pv-reloj) {
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+
+    .pv-header__zona .pv-ico--terminar,
+    .pv-header__zona .pv-ico--terminar button {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        width: auto !important;
+        min-height: 46px !important;
+    }
+
+    /* Los botones de icono son la excepción a la regla de arriba: siguen
+     * siendo cuadrados, solo que más grandes para el dedo. */
+    .pv-header__zona .pv-icono,
+    .pv-header__zona .pv-icono button {
+        flex: 0 0 44px !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+    }
+
+    /* Los dos datos comparten línea y se recortan con puntos suspensivos, que
+     * ya es el comportamiento de `.pv-sesion__dato strong`. */
+    .pv-sesion {
+        flex-wrap: nowrap;
+        gap: 14px;
+    }
+
+    .pv-sesion__dato {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .pv-reloj {
+        justify-content: flex-start;
+    }
+
+    /* -- cuerpo --------------------------------------------------------- */
+
+    /* La cabecera envuelta es más alta, así que un mínimo calculado sobre una
+     * cabecera de una sola fila solo añade hueco muerto al final. */
+    .pv-body {
+        min-height: 0 !important;
+    }
+
+    .pv-main {
+        padding: 12px !important;
+        gap: 12px !important;
+    }
+
+    /* -- rótulos sobre el vídeo ----------------------------------------- */
+
+    /* El vídeo pasa de ~800 px a ~360: los rótulos se escalan con él o tapan
+     * al paciente, que es justo lo que hay que mirar. */
+    .pv-overlay {
+        padding: 10px;
+    }
+
+    .pv-badge {
+        top: 10px;
+        left: 10px;
+        padding: 4px 9px;
+        font-size: 11px;
+    }
+
+    .pv-rep {
+        top: 42px;
+        left: 10px;
+        padding: 8px 11px;
+    }
+
+    .pv-rep strong {
+        font-size: 16px;
+    }
+
+    .pv-rep__marcas i {
+        width: 16px;
+    }
+
+    .pv-toast {
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        padding: 9px 11px;
+        font-size: 12.5px;
+    }
+
+    .pv-pantalla {
+        top: 10px;
+        right: 10px;
+    }
+
+    .pv-camara--visible video,
+    .pv-camara--visible img {
+        max-height: 130px !important;
+    }
+
+    /* -- panel de métricas ---------------------------------------------- */
+
+    .pv-tiles {
+        gap: 8px;
+    }
+
+    .pv-tile {
+        padding: 10px 11px 12px;
+    }
+
+    .pv-tile__valor {
+        font-size: 25px;
+    }
+
+    .pv-tile__unidad {
+        font-size: 13px;
+    }
+
+    /* -- vistas secundarias --------------------------------------------- */
+
+    /* `auto-fill` con un mínimo de 320 px deja de tener sentido cuando el
+     * contenedor mide menos que el mínimo. */
+    .pv-fichas {
+        grid-template-columns: 1fr;
+    }
+
+    .pv-ficha {
+        padding: 14px;
+    }
+
+    /* Si una tabla no cabe, se desplaza ella: la página no. */
+    .pv-main .table-wrap,
+    .pv-main .svelte-virtual-table-viewport,
+    .pv-ajustes,
+    .pv-tabla {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* En el cajón el espacio vertical es el de la pantalla, y el lema es lo
+     * único que no lleva a ninguna parte: fuera, para que quepan hasta el
+     * descargo y el botón de salir sin tener que desplazar. */
+    .pv-lema {
+        display: none;
+    }
+
+    /* El botón del cajón esquiva la barra de gestos del teléfono. */
+    .pv-plegar {
+        bottom: calc(16px + env(safe-area-inset-bottom));
+    }
+
+    .pv-footer {
+        flex-wrap: wrap !important;
+        gap: 4px 14px !important;
+        padding: 10px 14px calc(10px + env(safe-area-inset-bottom)) !important;
+        font-size: 11.5px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 19. Pantallas táctiles
+ *
+ * Estas reglas no van por ancho sino por **dispositivo de entrada**: un iPad
+ * en horizontal mide 1024 px y sigue manejándose con el dedo, así que atarlas
+ * al ancho las dejaba fuera justo donde también hacen falta.
+ * ----------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+
+    /* Safari en iOS hace zoom al enfocar cualquier campo con letra menor de
+     * 16 px, y al salir deja la página desplazada y a otra escala.
+     *
+     * Ojo con el selector: Gradio reescribe esta hoja anteponiendo
+     * `.gradio-container… .contain` a cada regla, así que nombrar aquí
+     * `.gradio-container` produce un selector que no existe —quedaría dentro
+     * de sí mismo— y la regla no llegaría a aplicarse nunca. Se ancla en
+     * nuestras propias zonas. */
+    .pv-header input,
+    .pv-header textarea,
+    .pv-header select,
+    .pv-main input,
+    .pv-main textarea,
+    .pv-main select {
+        font-size: 16px !important;
+    }
+
+    /* Nada pulsable por debajo del dedo. */
+    .pv-nav,
+    .pv-nav button {
+        min-height: 44px !important;
+    }
+
+    .pv-plegar,
+    .pv-plegar button {
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        flex: 0 0 44px !important;
+    }
+
+    .pv-pantalla,
+    .pv-pantalla button {
+        width: 40px !important;
+        min-width: 40px !important;
+        height: 40px !important;
+        flex: 0 0 40px !important;
+    }
+
+    /* Pausa y tema: los botones cuadrados de la sección 5 crecen para el dedo
+     * en cualquier pantalla táctil, no solo en las estrechas. */
+    .pv-icono,
+    .pv-icono button {
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        flex: 0 0 44px !important;
+    }
+
+    /* Los iconos que Gradio pinta sobre el vídeo (pantalla completa, descarga,
+     * compartir) miden 18 px: no son nuestros, pero el dedo es el mismo. */
+    .pv-video .icon-button {
+        min-width: 34px;
+        min-height: 34px;
+        padding: 8px !important;
+    }
+
+    /* Cabecera del desplegable de repeticiones. */
+    .pv-main .label-wrap {
+        min-height: 44px;
+    }
+
+    /* Los estados de ratón no tienen sentido sin ratón: en táctil se quedan
+     * pegados después de tocar, y la entrada activa deja de distinguirse. */
+    .pv-nav:hover,
+    .pv-nav button:hover {
+        background: transparent !important;
+        color: var(--pv-texto-tenue) !important;
+    }
+
+    .pv-nav--activo:hover,
+    .pv-nav--activo button:hover {
+        background: var(--pv-acento-suave) !important;
+        color: var(--pv-acento) !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 20. La barra lateral, como cajón, en pantallas estrechas
+ *
+ * Por debajo de 1100 px no hay ancho que repartir entre barra y contenido, así
+ * que la barra se superpone en vez de ocupar columna. Arranca cerrada —lo fija
+ * `JS_INICIO`— y se abre y se cierra con el mismo botón de siempre.
+ *
+ * Antes esto era un `display: none` a secas y dejaba la app **sin navegación
+ * en móvil**: la tira lateral es el único menú (la barra de pestañas de Gradio
+ * está oculta desde la sección 1), y plegar no podía devolverla porque aquella
+ * regla ganaba siempre. Medido a 390 px: 0 de 8 entradas alcanzables, incluida
+ * la de salir.
+ *
+ * Va al final del archivo a propósito: `body.pv-plegada .pv-rail` de la
+ * sección 16 tiene la misma especificidad, así que quien decide es el orden.
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+    .pv-rail {
+        position: fixed !important;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 60;
+        width: min(272px, 82vw) !important;
+        flex: 0 0 auto !important;
+        overflow-y: auto;
+        box-shadow: var(--pv-sombra);
+        transform: translateX(0);
+        transition: transform .18s ease;
+    }
+
+    /* Cerrada = fuera de la ventana, no `display: none`: así el movimiento se
+     * ve y el botón puede traerla de vuelta. */
+    body.pv-plegada .pv-rail {
+        display: flex !important;
+        transform: translateX(-101%);
+        box-shadow: none;
+    }
+
+    /* El botón se queda por encima del cajón: con el cajón abierto, es lo que
+     * hay que pulsar para cerrarlo. Sin esto no habría forma de salir. */
+    .pv-plegar,
+    body.pv-plegada .pv-plegar {
+        left: 14px;
+        z-index: 70 !important;
+    }
 }
