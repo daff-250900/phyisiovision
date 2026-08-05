@@ -352,6 +352,19 @@ def _cli() -> int:
     ordenes.add_parser(
         "exportar", help="vuelca las cuentas en el formato de PHYSIOVISION_USUARIOS")
 
+    clave = ordenes.add_parser(
+        "cambiar-clave", help="pone una contraseña nueva a una cuenta existente")
+    clave.add_argument("usuario")
+
+    perfil_cmd = ordenes.add_parser(
+        "cambiar-rol", help="cambia el perfil de una cuenta existente")
+    perfil_cmd.add_argument("usuario")
+    perfil_cmd.add_argument("--rol", required=True,
+                            choices=[ROL_FISIO, ROL_PACIENTE])
+    perfil_cmd.add_argument("--paciente", help="ficha a la que se asocia la "
+                                               "cuenta (solo con --rol paciente)")
+    perfil_cmd.add_argument("--fisio", help="fisioterapeuta que atiende la ficha")
+
     resumen_cmd = ordenes.add_parser(
         "resumen", help="imprime la línea para data/usuarios.txt (forma antigua)")
     resumen_cmd.add_argument("usuario")
@@ -359,9 +372,91 @@ def _cli() -> int:
     # Forma antigua: `python -m src.auth dafne` sin subcomando.
     argumentos = sys.argv[1:]
     if argumentos and argumentos[0] not in ("crear", "listar", "resumen",
-                                            "exportar", "-h", "--help"):
+                                            "exportar", "cambiar-clave",
+                                            "cambiar-rol", "-h", "--help"):
         argumentos = ["resumen", *argumentos]
     opciones = analizador.parse_args(argumentos)
+
+    if opciones.orden == "cambiar-rol":
+        usuarios, pacientes = UsuarioRepository(), PatientRepository()
+        cuenta = usuarios.obtener(opciones.usuario)
+        if cuenta is None:
+            print(f"No hay ninguna cuenta activa llamada {opciones.usuario!r}.",
+                  file=sys.stderr)
+            return 1
+
+        # Salvaguarda: sin fisioterapeutas no hay quien vea a los pacientes ni
+        # quien pueda arreglarlo desde la aplicación. Es un callejón sin salida
+        # fácil de provocar y difícil de deshacer sin tocar la base a mano.
+        if cuenta["rol"] == ROL_FISIO and opciones.rol != ROL_FISIO:
+            otros = [c for c in usuarios.listar(ROL_FISIO)
+                     if int(c["id"]) != int(cuenta["id"])]
+            if not otros:
+                print(f"{opciones.usuario!r} es el único fisioterapeuta: "
+                      "convertirlo dejaría la instalación sin ninguno y a los "
+                      "pacientes sin nadie que los vea.", file=sys.stderr)
+                print("Crea otro antes:  python -m src.auth crear <usuario> "
+                      "--rol fisioterapeuta", file=sys.stderr)
+                return 1
+
+        fisio_id = None
+        if opciones.fisio:
+            cuenta_fisio = usuarios.obtener(opciones.fisio)
+            if cuenta_fisio is None or cuenta_fisio["rol"] != ROL_FISIO:
+                print(f"No hay ningún fisioterapeuta llamado {opciones.fisio!r}.",
+                      file=sys.stderr)
+                return 1
+            fisio_id = int(cuenta_fisio["id"])
+
+        # La ficha se comprueba **antes** de tocar el rol. Al revés, un choque
+        # aquí dejaba la cuenta ya convertida en paciente y sin ficha: un
+        # estado a medias del que la propia orden no sabe salir.
+        ficha = None
+        nombre_ficha = ""
+        if opciones.rol == ROL_PACIENTE:
+            nombre_ficha = opciones.paciente or cuenta["nombre"] or opciones.usuario
+            ficha = pacientes.por_nombre(nombre_ficha, fisio_id)
+            ocupada = ficha.get("usuario_id") if ficha else None
+            if ocupada and int(ocupada) != int(cuenta["id"]):
+                print(f"La ficha {nombre_ficha!r} ya tiene otra cuenta asociada "
+                      f"(id {ocupada}); no se cambia nada.", file=sys.stderr)
+                return 1
+
+        usuarios.cambiar_rol(opciones.usuario, opciones.rol)
+        print(f"{opciones.usuario!r}: {cuenta['rol']} -> {opciones.rol}")
+
+        if opciones.rol == ROL_PACIENTE:
+            if ficha is None:
+                ficha = pacientes.obtener_o_crear(nombre_ficha, fisio_id=fisio_id)
+            pacientes.asignar_usuario(int(ficha["id"]), int(cuenta["id"]))
+            if fisio_id is not None:
+                pacientes.asignar_fisio(int(ficha["id"]), fisio_id)
+            destino_id = fisio_id or ficha.get("fisio_id")
+            destino = usuarios.por_id(int(destino_id)) if destino_id else None
+            print(f"Asociada a la ficha {nombre_ficha!r} (id {ficha['id']})"
+                  + (f", que atiende {destino['usuario']!r}." if destino else
+                     ", sin fisioterapeuta asignado."))
+        return 0
+
+    if opciones.orden == "cambiar-clave":
+        # No se pide la contraseña anterior: quien puede ejecutar esto ya tiene
+        # acceso al disco donde vive la base, así que exigirla no protegería
+        # nada y dejaría sin salida a quien la haya olvidado, que es el caso
+        # para el que existe este comando.
+        usuarios = UsuarioRepository()
+        if usuarios.obtener(opciones.usuario) is None:
+            print(f"No hay ninguna cuenta activa llamada {opciones.usuario!r}.",
+                  file=sys.stderr)
+            print("Míralas con:  python -m src.auth listar", file=sys.stderr)
+            return 1
+        contrasena = _pedir_contrasena()
+        if contrasena is None:
+            return 1
+        usuarios.cambiar_clave(opciones.usuario, resumir(contrasena))
+        print(f"Contraseña de {opciones.usuario!r} actualizada.")
+        print("Si el despliegue lee las cuentas de un secreto, vuelve a subirlo:")
+        print("  ./deploy/cloudrun/secretos.sh <proyecto>")
+        return 0
 
     if opciones.orden == "exportar":
         # Semilla para un despliegue sin disco persistente: se vuelcan **las dos

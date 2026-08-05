@@ -86,21 +86,60 @@ entrenamiento/modelo_xgboost_ex1.ipynb          # datos -> modelo -> artefactos
 entrenamiento/consumo_modelo_gradio_ex1.ipynb   # artefactos -> inferencia -> app
 ```
 
-## Acceso
+## Acceso y perfiles
 
 La app muestra nombres de pacientes y su historial, así que **no arranca fuera de
-`localhost` sin usuarios configurados**. Crear uno:
+`localhost` sin usuarios configurados**.
+
+Hay **dos perfiles**, y determinan qué se ve:
+
+| Perfil | Qué ve |
+|---|---|
+| `fisioterapeuta` | **sus** pacientes, y el historial y el progreso de cada uno |
+| `paciente` | su sesión, su historial y su progreso; nada de otras personas |
+
+Todo lo demás —ejercicios, configuración y ayuda— lo ven los dos: la
+configuración dice si hay modelo, si hay voz y con qué tema se pinta la
+interfaz, y no guarda nada de nadie.
+
+Cada paciente pertenece al fisioterapeuta que lo da de alta, y las consultas se
+filtran por esa asignación: escribir el nombre de un paciente ajeno en el
+buscador no abre su historial.
 
 ```bash
-python -m src.auth dafne        # pide la contraseña por teclado
+python -m src.auth crear dafne --rol fisioterapeuta
+python -m src.auth crear marta --rol paciente --paciente "Marta Gómez" --fisio dafne
+python -m src.auth listar
 ```
 
-Imprime una línea `usuario:pbkdf2_sha256$…` para pegar en `data/usuarios.txt`
-—que está en `.gitignore`— o en la variable `PHYSIOVISION_USUARIOS`. La
-contraseña nunca se guarda: solo un resumen con sal (PBKDF2-HMAC-SHA256).
+Las contraseñas se piden por teclado y nunca se guardan: solo un resumen con sal
+(PBKDF2-HMAC-SHA256), en la tabla `usuarios`. Un paciente puede tener ficha e
+historial **sin** cuenta: se le crea cuando quiera entrar por su cuenta.
+
+En despliegues sin disco persistente los usuarios pueden seguir llegando por
+`PHYSIOVISION_USUARIOS`; las dos fuentes se suman, así que ni un despliegue
+configurado por secreto ni una cuenta creada en la app se quedan fuera.
 
 En `localhost` el login es opcional; si no hay usuarios, la barra lateral lo
-declara en ámbar para que una app abierta no se confunda con una cerrada.
+declara en ámbar para que una app abierta no se confunda con una cerrada, y sin
+perfil no se filtra nada.
+
+### Migración desde la versión anterior
+
+Los usuarios de `data/usuarios.txt` pasan a la tabla como `fisioterapeuta`, cada
+nombre distinto de la tabla `sessions` se convierte en una ficha de paciente y
+cada serie queda atada a la suya. Corre sola al arrancar, es idempotente, y
+también se lanza a mano:
+
+```bash
+python -m src.migracion                              # migrar e informar
+python -m src.migracion estado                       # qué hay ahora
+python -m src.migracion asignar "Marta" --fisio ana  # cambiar de profesional
+```
+
+Si había **varios** usuarios, las fichas se asignan al que ya existía en el
+archivo —la base antigua no guardaba quién atendió cada serie— y se avisa por
+pantalla para poder reasignarlas.
 
 Cinco intentos fallidos bloquean a ese usuario cinco minutos, y el castigo se
 duplica si se insiste, hasta una hora. Cada acceso —acertado o no— queda en el
@@ -116,7 +155,7 @@ Todo opcional, en un `.env` en la raíz. La app arranca sin ninguna.
 | `PHYSIOVISION_MEDIAPIPE` | variante de pesos (`heavy` por defecto; **debe coincidir con la del entrenamiento**) |
 | `PHYSIOVISION_TTS_MOTOR` | motor de voz (`auto`, `cloud`, `gemini`) |
 | `PHYSIOVISION_HOST` / `PHYSIOVISION_PORT` | dónde escucha el servidor |
-| `PHYSIOVISION_USUARIOS` | usuarios y resúmenes, si no se usa `data/usuarios.txt` |
+| `PHYSIOVISION_USUARIOS` | usuarios y resúmenes; se suman a los de la tabla `usuarios` |
 | `PHYSIOVISION_DATOS` | dónde escribir la base y la caché (por defecto `./data`) |
 | `PHYSIOVISION_ANCHO_SALIDA` | ancho del vídeo devuelto al navegador (960 px) |
 | `PHYSIOVISION_HISTORIAL` | `0` para no guardar nada de pacientes en disco |

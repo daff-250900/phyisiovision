@@ -198,7 +198,7 @@ def _menu_de(usuario, base, monkeypatch) -> dict[str, bool]:
     from ui.app_ui import NAV
     from ui.callbacks import preparar_perfil
 
-    _, _, *entradas = preparar_perfil(_Peticion(usuario))
+    _, _, _, *entradas = preparar_perfil(_Peticion(usuario))
     return {clave: entrada.get("visible", True)
             for (clave, _), entrada in zip(NAV, entradas)}
 

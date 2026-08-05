@@ -1611,3 +1611,27 @@ body.pv-plegada .pv-header__marca {
         z-index: 70 !important;
     }
 }
+
+/* --------------------------------------------------------------------------
+ * 21. El nombre del paciente, cuando no se escribe
+ *
+ * Con perfil de paciente la cabecera no pide el nombre: lo enseña. El rótulo
+ * ocupa el sitio del cuadro de texto y se alinea con los desplegables que
+ * tiene al lado, que sí son campos.
+ * ----------------------------------------------------------------------- */
+
+.pv-paciente-fijo {
+    display: flex !important;
+    align-items: center;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    min-width: 0 !important;
+}
+
+/* Hereda la forma de `.pv-sesion__dato` (sección 9), que es como se enseña el
+ * mismo dato una vez la sesión está en marcha: el paciente ve su nombre igual
+ * antes y durante, y no parece que la interfaz haya cambiado de sitio. */
+.pv-sesion__dato--fijo {
+    padding: 2px 0;
+}

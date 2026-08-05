@@ -272,6 +272,19 @@ def tarjeta_usuario(usuario: str | None, rol: str | None = None) -> str:
             f'<em>{html.escape(pie)}</em></div></div>')
 
 
+def nombre_fijo(nombre: str) -> str:
+    """El nombre del paciente como rótulo, no como campo.
+
+    Con perfil de paciente no hay nada que escribir: la serie va a su ficha y
+    punto. Un cuadro de texto deshabilitado seguiría pareciendo un formulario a
+    medio rellenar —invita a tocarlo y no responde—, así que se enseña el dato
+    con la misma forma que tiene durante la sesión.
+    """
+    return (f'<div class="pv-sesion__dato pv-sesion__dato--fijo">'
+            f'<span>Paciente</span><strong>{html.escape(nombre)}</strong>'
+            f'</div>')
+
+
 def cronometro(sesion) -> str:
     """Reloj de sesión. En pausa se marca, porque el tiempo deja de correr."""
     segundos = int(getattr(sesion, "segundos_activos", 0.0))

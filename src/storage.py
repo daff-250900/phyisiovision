@@ -276,6 +276,19 @@ class UsuarioRepository(_RepositorioBase):
         """`{usuario: resumen}` de las cuentas activas, como espera el login."""
         return {f["usuario"]: f["resumen"] for f in self.listar()}
 
+    def cambiar_rol(self, usuario: str, rol: str) -> None:
+        """Cambia el perfil de una cuenta ya existente.
+
+        Hace falta porque los perfiles llegaron después que las cuentas: todo
+        lo que había en `data/usuarios.txt` se migró como `fisioterapeuta`, que
+        era lo que eran, y alguna de esas personas resulta ser un paciente.
+        """
+        if rol not in ROLES:
+            raise ValueError(f"Rol desconocido: {rol!r}. Usa uno de {ROLES}.")
+        self._ejecutar(
+            "UPDATE usuarios SET rol = ? WHERE lower(usuario) = lower(?)",
+            (rol, usuario.strip()))
+
     def cambiar_clave(self, usuario: str, resumen: str) -> None:
         self._ejecutar(
             "UPDATE usuarios SET resumen = ? WHERE lower(usuario) = lower(?)",

@@ -42,7 +42,27 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.lock .
-RUN pip install --no-cache-dir -r requirements.lock
+
+# En Linux, `xgboost` arrastra `nvidia-nccl-cu12`: 400 MB de librerías de GPU
+# para entrenamiento distribuido que este servicio no usa —Cloud Run no tiene
+# GPU— y que llevaban la imagen de 1,0 a 3,4 GB. Se paga en almacenamiento de
+# Artifact Registry y, sobre todo, en arranque en frío.
+#
+# Se cambia aquí y no en `requirements.lock` porque `xgboost-cpu` **no publica
+# rueda para macOS arm64**, que es donde se entrena: allí intentaría compilar
+# desde fuente. El `sed` deja el archivo portable y la imagen ligera.
+#
+# Es el mismo motor. Comprobado sobre `models/xgboost_model.json` con 50 filas:
+# probabilidades idénticas bit a bit y mismo contrato de variables.
+RUN sed -i 's/^xgboost==/xgboost-cpu==/' requirements.lock \
+    && pip install --no-cache-dir -r requirements.lock
+
+# Guardia de tamaño: sin esto, un `pip install xgboost` colado por cualquier
+# dependencia futura volvería a meter los 400 MB, y solo se notaría en la
+# factura y en el tiempo de despliegue.
+RUN test ! -d /usr/local/lib/python3.11/site-packages/nvidia \
+    || { echo "ERROR: han entrado librerias CUDA en la imagen."; \
+         du -sh /usr/local/lib/python3.11/site-packages/nvidia; exit 1; }
 
 COPY app.py ./
 COPY src ./src
@@ -90,8 +110,14 @@ EXPOSE 7860
 
 # Con login activo, `/` devuelve 200 con la pantalla de acceso: sigue sirviendo
 # como señal de vida sin necesitar credenciales.
+#
+# El puerto sale de `PHYSIOVISION_PORT`, no escrito a mano: quien arranca el
+# contenedor puede cambiarlo (`-e PHYSIOVISION_PORT=8000 -p 8000:8000`), y con
+# el puerto fijo aquí la comprobación miraría al sitio equivocado y marcaría
+# como `unhealthy` un contenedor perfectamente sano.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request as u, sys; \
-sys.exit(0 if u.urlopen('http://127.0.0.1:7860/', timeout=4).status == 200 else 1)"
+    CMD python -c "import os, urllib.request as u, sys; \
+puerto = os.environ.get('PHYSIOVISION_PORT', '7860'); \
+sys.exit(0 if u.urlopen(f'http://127.0.0.1:{puerto}/', timeout=4).status == 200 else 1)"
 
 CMD ["python", "app.py"]

@@ -19,7 +19,8 @@ CABLEADO = {
     14: 1,   # iniciar sesión
     13: 2,   # terminar serie y salir
     11: 1,   # elegir paciente -> su historial
-    9: 2,    # stream de la cámara y preparación del perfil
+    10: 1,   # preparación del perfil (tarjeta, rótulo, campo y tira)
+    9: 1,    # stream de la cámara
     8: 7,    # navegación de la tira lateral (pestaña + 7 botones)
     3: 1,    # alternar pausa
     2: 3,    # lista de pacientes, historial y progreso
@@ -71,12 +72,12 @@ def test_iniciar_sesion_exige_paciente():
 
 
 def test_preparar_perfil_devuelve_lo_que_espera_el_cableado():
-    """Tarjeta de usuario, campo de paciente y una entrada por vista."""
-    assert len(preparar_perfil(None)) == 2 + len(NAV)
+    """Tarjeta, rótulo del paciente, campo de paciente y una entrada por vista."""
+    assert len(preparar_perfil(None)) == 3 + len(NAV)
 
 
 def test_sin_login_no_se_esconde_ninguna_vista():
     """Arranque local: no hay perfil, así que no hay nada que recortar."""
-    _, _, *nav = preparar_perfil(None)
+    _, _, _, *nav = preparar_perfil(None)
     assert all(entrada == {} or entrada.get("visible") is not False
                for entrada in nav)

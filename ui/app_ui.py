@@ -348,6 +348,12 @@ def create_app(con_login: bool | None = None) -> gr.Blocks:
             # Antes de empezar, la cabecera son los controles; con la sesión en
             # marcha pasa a ser el rótulo de quién y qué, como en la maqueta.
             with gr.Row(elem_classes="pv-header__zona") as fila_inicio:
+                # Con perfil de paciente el nombre no se pide: se enseña. El
+                # cuadro de texto se esconde y este rótulo ocupa su sitio, y lo
+                # decide `preparar_perfil` en cada petición, porque el mismo
+                # servidor atiende a los dos perfiles.
+                paciente_fijo = gr.HTML(visible=False, scale=2,
+                                        elem_classes="pv-paciente-fijo")
                 paciente = gr.Textbox(label="Paciente",
                                       placeholder="Nombre o identificador",
                                       scale=2)
@@ -514,7 +520,7 @@ def create_app(con_login: bool | None = None) -> gr.Blocks:
         # perfil se conoce por petición, no al construir la interfaz: el mismo
         # servidor atiende a los dos.
         demo.load(fn=preparar_perfil, inputs=None,
-                  outputs=[usuario_actual, paciente] + botones_nav)
+                  outputs=[usuario_actual, paciente_fijo, paciente] + botones_nav)
         boton_tema.click(js=JS_TEMA)
         boton_plegar.click(js=JS_PLEGAR)
 

@@ -65,4 +65,18 @@ if __name__ == "__main__":
         theme=crear_tema(),
         css=CSS_GENERADO,
         css_paths=[CSS_PATH] if CSS_PATH.exists() else None,
+        # Sin esto, la voz no suena. Gradio se niega a servir cualquier archivo
+        # que no esté en su carpeta temporal o declarado aquí, y devuelve
+        # `403 File not allowed` a la petición del reproductor:
+        #
+        #     GET /gradio_api/file=…/data/audio/09886963bdb7e250.wav -> 403
+        #
+        # Pasa igual en local y en contenedor, y estar bajo el directorio de
+        # trabajo no basta. La consigna se generaba, se cacheaba y no llegaba
+        # nunca al navegador, así que la sesión salía muda sin decir por qué.
+        #
+        # Se declara **solo** la caché de audio, no `data/` entero: ahí viven
+        # también la base de pacientes y los vídeos subidos, y servirlos por
+        # URL sería justo lo contrario de lo que hace falta.
+        allowed_paths=[str(settings.audio_dir)],
     )

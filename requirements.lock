@@ -4,12 +4,32 @@
 # deja libres las transitivas, que es lo que hace el archivo portable entre
 # macOS (donde se entrenó) y Linux (donde se despliega).
 #
+# La excepción son las transitivas que deciden si la aplicación **arranca**:
+# `opencv-contrib` y `starlette`/`fastapi` van fijadas, cada una con la nota de
+# qué se rompió cuando no lo estaban. La regla para añadir una aquí es esa: que
+# se haya medido un fallo, no que se sospeche.
+#
 # Las cuatro que de verdad determinan los números son mediapipe, opencv, numpy y
 # xgboost: cambiarlas exige revalidar con `pytest`, que incluye las pruebas de
 # paridad entre la ruta por lotes y la ruta en vivo.
 #
 # Regenerar: ver la cabecera de este archivo en el repositorio.
 gradio==6.20.0
+# El servidor que Gradio lleva debajo. Van fijados aunque sean transitivos, y
+# por un fallo medido: con `starlette 1.4.0` la aplicación **devuelve una
+# página en blanco y revienta en cada petición**, porque
+# `gradio/brotli_middleware.py` construye `GZipResponder(app, minimum_size)` y
+# 1.4.0 añadió el argumento obligatorio `thread_minimum_size`:
+#
+#     TypeError: GZipResponder.__init__() missing 1 required
+#     keyword-only argument: 'thread_minimum_size'
+#
+# No se vio en desarrollo porque el `.venv` local tenía 1.3.1 de antes; la
+# imagen, recién resuelta, se llevó 1.4.0. Es el mismo caso que el de
+# opencv-contrib de más abajo: una transitiva suelta que decide si la
+# aplicación arranca o no.
+starlette==1.3.1
+fastapi==0.140.0
 opencv-python-headless==4.13.0.92
 # La que de verdad provee `cv2`: mediapipe depende de opencv-contrib y su
 # versión gana a la headless. Fijar solo la de arriba dejaba a `cv2` a la
@@ -21,6 +41,11 @@ pandas==2.3.3
 matplotlib==3.10.9
 scipy==1.15.3
 scikit-learn==1.7.2
+# En Linux, `xgboost` arrastra `nvidia-nccl-cu12`: 400 MB de librerías de GPU
+# que aquí no usa nadie. **No se cambia aquí** por `xgboost-cpu`, que sería lo
+# obvio, porque esa variante no publica rueda para macOS arm64 y este archivo
+# tiene que servir en los dos sitios: intentaría compilar desde fuente y pediría
+# `cmake`. El cambio vive en el `Dockerfile`, que es donde el peso importa.
 xgboost==3.2.0
 tqdm==4.69.1
 pillow==12.3.0

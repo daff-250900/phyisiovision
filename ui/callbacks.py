@@ -457,16 +457,26 @@ def preparar_perfil(request: gr.Request | None = None):
 
     tarjeta = paneles.tarjeta_usuario(usuario, rol=rol)
 
-    # Con perfil de paciente el nombre ni se escribe ni se elige: es el suyo.
-    nombre = str(actual.get("paciente_nombre") or actual.get("nombre") or "") \
-        if es_paciente else ""
-    campo = (gr.update(value=nombre, interactive=False,
-                       info="Tus sesiones se guardan en tu historial.")
-             if es_paciente else gr.update())
+    # Con perfil de paciente el nombre ni se escribe ni se elige: es el suyo, y
+    # se enseña como rótulo. El cuadro de texto se esconde en vez de quedarse
+    # deshabilitado, que es lo que hacía antes: un campo apagado sigue
+    # pareciendo un formulario a medio rellenar.
+    #
+    # Sigue teniendo valor aunque esté oculto —Gradio manda los ocultos igual—,
+    # y eso mantiene `iniciar_sesion` funcionando sin ramas. Aun así ese
+    # callback vuelve a resolver el nombre desde el perfil: lo que llega del
+    # navegador no decide en el historial de quién se escribe.
+    if es_paciente:
+        nombre = str(actual.get("paciente_nombre") or actual.get("nombre") or "")
+        campo = gr.update(value=nombre, visible=False)
+        rotulo = gr.update(value=paneles.nombre_fijo(nombre), visible=True)
+    else:
+        campo = gr.update(visible=True)
+        rotulo = gr.update(visible=False)
 
     visibilidad = [gr.update(visible=not (es_paciente and clave in NAV_SOLO_FISIO))
                    for clave, _ in _nav()]
-    return [tarjeta, campo, *visibilidad]
+    return [tarjeta, rotulo, campo, *visibilidad]
 
 
 def _nav():
