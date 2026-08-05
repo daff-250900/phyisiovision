@@ -4,5 +4,30 @@ mediapipe>=0.10,<0.11
 numpy>=1.26,<3.0
 pandas>=2.1,<3.0
 matplotlib>=3.8,<4.0
+scipy>=1.11,<2.0
 scikit-learn>=1.4,<2.0
 xgboost>=2.0,<4.0
+tqdm>=4.66,<5.0
+# Reescalado del logotipo antes de incrustarlo (ui/iconos.py). Viene con
+# gradio, pero se declara porque el codigo la importa directamente.
+pillow>=10.0,<14.0
+
+# Redacción de la realimentación con Gemini. Opcional: sin GEMINI_API_KEY la app
+# usa los textos de knowledge_base/ejercicios.json y funciona igual.
+google-genai>=1.0,<3.0
+
+# Voz de las consignas. Opcional: sin GOOGLE_APPLICATION_CREDENTIALS la app
+# funciona igual, en silencio. Cloud TTS NO acepta claves de API: necesita una
+# cuenta de servicio, que es un alta distinta de la de Gemini.
+google-cloud-texttospeech>=2.16,<3.0
+
+# Persistencia en PostgreSQL (Cloud SQL). Opcional: sin PHYSIOVISION_BD la
+# aplicacion usa SQLite y no hace falta instalarla.
+psycopg[binary]>=3.1,<4.0
+
+# Solo para entrenamiento/modelo_xgboost_ex1.ipynb. El notebook funciona sin ellas
+# (usa busqueda aleatoria, importancia por permutacion y etiquetado por CSV).
+# jupyter>=1.0
+# optuna>=3.5
+# shap>=0.44
+# ipywidgets>=8.1

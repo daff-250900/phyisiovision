@@ -1,7 +1,1637 @@
+/* PhysioVision — hoja de estilos de la interfaz.
+ *
+ * Las variables `--pv-*` NO se definen aquí: las genera `ui/tema.py` y se
+ * inyectan antes que este archivo (ver `app.py`). Aquí solo hay reglas que las
+ * consumen, para que cambiar un color sea tocar un único sitio.
+ *
+ * Los dos interruptores de la interfaz son clases en el `body`:
+ *   body.dark        -> modo oscuro (lo pone Gradio y lo alterna nuestro botón)
+ *   body.pv-plegada  -> barra lateral reducida a tira de iconos
+ */
+
+/* --------------------------------------------------------------------------
+ * 1. Contenedor de Gradio
+ * ----------------------------------------------------------------------- */
+
 .gradio-container {
-    max-width: 1180px !important;
-    margin: 0 auto;
+    max-width: 100% !important;
+    padding: 0 !important;
+    background: var(--pv-fondo);
 }
+
+.gradio-container > .main,
+.gradio-container .wrap > .contain {
+    padding: 0 !important;
+    gap: 0 !important;
+}
+
 footer {
     display: none !important;
+}
+
+/* La barra de pestañas se oculta: quien navega es la tira lateral. Las
+ * pestañas se conservan porque son las que sostienen el enrutado. */
+.pv-tabs .tab-wrapper,
+.pv-tabs .tab-container {
+    display: none !important;
+}
+
+.pv-tabs,
+.pv-tabs > div {
+    border: 0 !important;
+    background: transparent !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 2. Cabecera
+ * ----------------------------------------------------------------------- */
+
+.pv-header {
+    align-items: center !important;
+    gap: 18px !important;
+    padding: 8px 20px !important;
+    background: var(--pv-superficie);
+    border-bottom: 1px solid var(--pv-borde);
+    flex-wrap: nowrap !important;
+}
+
+.pv-marca {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 100%;
+}
+
+.pv-marca__nombre {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+    color: var(--pv-texto);
+    white-space: nowrap;
+}
+
+.pv-marca__nombre em {
+    color: var(--pv-acento);
+    font-style: normal;
+}
+
+.pv-marca .pv-marca__logo {
+    width: 62px;
+    height: 62px;
+    flex: 0 0 62px;
+    border-radius: 14px;
+    object-fit: cover;
+    /* El PNG trae su propio fondo oscuro: redondearlo lo convierte en una
+     * pastilla y deja de parecer un recorte pegado sobre el tema claro. */
+    background: #0C0F17;
+    border: 1px solid var(--pv-borde);
+}
+
+/* Reserva vectorial, si el PNG no estuviera. */
+.pv-marca span.pv-marca__logo {
+    background-color: var(--pv-acento);
+    border: 0;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+/* --------------------------------------------------------------------------
+ * 3. Cuerpo: tira lateral + contenido
+ * ----------------------------------------------------------------------- */
+
+.pv-body {
+    align-items: stretch !important;
+    gap: 0 !important;
+    flex-wrap: nowrap !important;
+    min-height: calc(100vh - 152px);
+}
+
+.pv-rail {
+    flex: 0 0 236px !important;
+    width: 236px !important;
+    min-width: 0 !important;
+    gap: 2px !important;
+    padding: 16px 12px !important;
+    background: var(--pv-superficie);
+    border-right: 1px solid var(--pv-borde);
+    transition: flex-basis .16s ease, width .16s ease, padding .16s ease;
+    overflow: hidden;
+}
+
+.pv-lema {
+    color: var(--pv-texto-tenue);
+    font-size: 12.5px;
+    line-height: 1.45;
+    padding: 0 10px 12px;
+}
+
+.pv-main {
+    padding: 16px 20px !important;
+    gap: 14px !important;
+    min-width: 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 4. Entradas de navegación
+ * ----------------------------------------------------------------------- */
+
+.pv-nav,
+.pv-nav button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    width: 100% !important;
+    padding: 10px 12px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--pv-texto-tenue) !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    text-align: left !important;
+    white-space: nowrap;
+    min-width: 0 !important;
+}
+
+.pv-nav::before,
+.pv-nav button::before {
+    content: "";
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.pv-nav:hover,
+.pv-nav button:hover {
+    background: var(--pv-superficie-2) !important;
+    color: var(--pv-texto) !important;
+}
+
+.pv-nav--activo,
+.pv-nav--activo button {
+    background: var(--pv-acento-suave) !important;
+    color: var(--pv-acento) !important;
+    font-weight: 600 !important;
+    box-shadow: inset 3px 0 0 0 var(--pv-acento) !important;
+}
+
+/* Una entrada oculta se queda oculta.
+ *
+ * El `display: flex !important` de arriba hace falta para que el icono y la
+ * etiqueta se alineen, pero le ganaba a la clase `hidden` que pone Gradio al
+ * marcar un componente como `visible=False`: el perfil de paciente seguía
+ * viendo «Pacientes» y «Configuración» en la tira, aunque los callbacks ya no
+ * le sirvieran nada. */
+.pv-nav.hidden,
+.pv-nav.hidden button {
+    display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 5. Botones de icono (tema, pliegue)
+ * ----------------------------------------------------------------------- */
+
+.pv-icono,
+.pv-icono button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+    border: 1px solid var(--pv-borde) !important;
+    background: var(--pv-superficie) !important;
+    color: var(--pv-texto-tenue) !important;
+    font-size: 0 !important;
+    flex: 0 0 38px !important;
+}
+
+.pv-icono::before,
+.pv-icono button::before {
+    content: "";
+    width: 19px;
+    height: 19px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+.pv-icono:hover,
+.pv-icono button:hover {
+    color: var(--pv-texto) !important;
+    background: var(--pv-superficie-2) !important;
+}
+
+/* El botón de tema no cambia de clase al pulsarlo —lo hace el `body`—, así que
+ * sus dos iconos entran por variable. Enseña a dónde lleva, no dónde estás:
+ * en claro ofrece la luna, en oscuro el sol. */
+.pv-tema::before {
+    -webkit-mask-image: var(--pv-ico-oscuro);
+    mask-image: var(--pv-ico-oscuro);
+}
+
+body.dark .pv-tema::before {
+    -webkit-mask-image: var(--pv-ico-claro);
+    mask-image: var(--pv-ico-claro);
+}
+
+/* Botones con texto e icono a la izquierda (iniciar, terminar). */
+.pv-btn-ico::before {
+    content: "";
+    display: inline-block;
+    width: 17px;
+    height: 17px;
+    margin-right: 8px;
+    vertical-align: -3px;
+    background-color: currentColor;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+/* --------------------------------------------------------------------------
+ * 6. Tarjetas del contenido
+ * ----------------------------------------------------------------------- */
+
+.pv-tarjeta {
+    background: var(--pv-superficie) !important;
+    border: 1px solid var(--pv-borde) !important;
+    border-radius: 14px !important;
+    padding: 14px !important;
+    box-shadow: var(--pv-sombra);
+}
+
+.pv-descargo {
+    margin-top: auto !important;
+    padding: 12px !important;
+    border: 1px solid var(--pv-borde);
+    border-radius: 12px;
+    background: var(--pv-superficie-2);
+    color: var(--pv-texto-tenue);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.pv-descargo strong {
+    color: var(--pv-acento);
+}
+
+.pv-peligro,
+.pv-peligro button {
+    background: var(--pv-peligro) !important;
+    border-color: var(--pv-peligro) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 7. Pie
+ * ----------------------------------------------------------------------- */
+
+.pv-footer {
+    align-items: center !important;
+    gap: 20px !important;
+    padding: 10px 20px !important;
+    border-top: 1px solid var(--pv-borde);
+    background: var(--pv-superficie);
+    color: var(--pv-texto-tenue);
+    font-size: 12.5px;
+}
+
+.pv-punto {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--pv-acento);
+    margin-right: 7px;
+    vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
+ * 8. Adaptación a pantallas estrechas
+ * ----------------------------------------------------------------------- */
+
+/* Por debajo de 1100 px la barra lateral deja de ser una columna y pasa a ser
+ * un cajón sobre el contenido. Las reglas están al final del archivo, en la
+ * sección 20: tienen que ganar a la sección 16, que es la que la esconde
+ * cuando está plegada, y entre selectores de la misma especificidad manda el
+ * orden. */
+
+@media (max-width: 860px) {
+    .pv-header {
+        flex-wrap: wrap !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 9. Cabecera de sesión (IU-3)
+ * ----------------------------------------------------------------------- */
+
+.pv-header__zona {
+    align-items: center !important;
+    gap: 14px !important;
+    flex: 1 1 auto !important;
+    flex-wrap: nowrap !important;
+    min-width: 0 !important;
+}
+
+.pv-sesion {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    min-width: 0;
+}
+
+.pv-sesion__dato {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.pv-sesion__dato span {
+    color: var(--pv-texto-tenue);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.pv-sesion__dato strong {
+    color: var(--pv-texto);
+    font-size: 16px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pv-chip {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--pv-superficie-2);
+    border: 1px solid var(--pv-borde);
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+    font-style: normal;
+    width: fit-content;
+}
+
+.pv-reloj {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 12px;
+    background: var(--pv-superficie-2);
+    white-space: nowrap;
+}
+
+.pv-reloj__etiqueta {
+    color: var(--pv-texto-tenue);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.pv-reloj strong {
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pv-texto);
+}
+
+.pv-reloj--pausa {
+    border-color: var(--pv-atencion);
+    background: var(--pv-atencion-suave);
+}
+
+.pv-reloj--pausa em {
+    color: var(--pv-atencion);
+    font-style: normal;
+    font-size: 11.5px;
+}
+
+/* --------------------------------------------------------------------------
+ * 10. Panel de métricas (IU-4)
+ * ----------------------------------------------------------------------- */
+
+.pv-panel {
+    gap: 12px !important;
+}
+
+.pv-fase {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--pv-superficie-2);
+    color: var(--pv-texto);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.pv-fase__lado {
+    color: var(--pv-texto-tenue);
+    font-weight: 500;
+}
+
+.pv-fase--calibrando {
+    background: var(--pv-atencion-suave);
+    color: var(--pv-atencion);
+}
+
+.pv-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.pv-tile {
+    position: relative;
+    padding: 12px 13px 14px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 13px;
+    background: var(--pv-superficie);
+    overflow: hidden;
+}
+
+.pv-tile__titulo {
+    color: var(--pv-texto-tenue);
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.pv-tile__valor {
+    color: var(--pv-texto);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.pv-tile__valor--vacio {
+    color: var(--pv-texto-tenue);
+}
+
+.pv-tile__unidad {
+    font-size: 15px;
+    font-weight: 600;
+    margin-left: 2px;
+    color: var(--pv-texto-tenue);
+}
+
+.pv-tile__nota {
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+    margin-top: 3px;
+}
+
+.pv-tile__barra {
+    margin-top: 9px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--pv-superficie-3);
+    overflow: hidden;
+}
+
+.pv-tile__barra span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--pv-acento);
+    transition: width .18s ease;
+}
+
+.pv-tile--aviso .pv-tile__barra span {
+    background: var(--pv-atencion);
+}
+
+.pv-tile--aviso .pv-tile__valor {
+    color: var(--pv-atencion);
+}
+
+.pv-estado {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--pv-borde);
+    background: var(--pv-superficie);
+}
+
+.pv-estado__marca {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    border-radius: 50%;
+    font-size: 20px;
+    font-weight: 700;
+    background: var(--pv-superficie-2);
+    color: var(--pv-texto-tenue);
+}
+
+.pv-estado__titulo {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--pv-texto);
+}
+
+.pv-estado__texto {
+    color: var(--pv-texto-tenue);
+    font-size: 13px;
+    margin-top: 2px;
+}
+
+.pv-estado__fuente {
+    color: var(--pv-atencion);
+    font-size: 11.5px;
+    margin-top: 5px;
+}
+
+.pv-estado--ok {
+    border-color: var(--pv-acento);
+    background: var(--pv-acento-suave);
+}
+
+.pv-estado--ok .pv-estado__marca {
+    background: var(--pv-acento);
+    color: #fff;
+}
+
+.pv-estado--aviso {
+    border-color: var(--pv-atencion);
+    background: var(--pv-atencion-suave);
+}
+
+.pv-estado--aviso .pv-estado__marca {
+    background: var(--pv-atencion);
+    color: #fff;
+}
+
+.pv-serie {
+    padding: 12px 14px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 13px;
+    background: var(--pv-superficie);
+}
+
+.pv-serie__titulo {
+    color: var(--pv-texto-tenue);
+    font-size: 12px;
+    margin-bottom: 10px;
+}
+
+.pv-serie__lista {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.pv-pastilla {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.pv-pastilla span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 2px solid var(--pv-superficie-3);
+    color: var(--pv-texto-tenue);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.pv-pastilla em {
+    color: var(--pv-texto-tenue);
+    font-size: 11px;
+    font-style: normal;
+}
+
+.pv-pastilla--ok span {
+    background: var(--pv-acento);
+    border-color: var(--pv-acento);
+    color: #fff;
+}
+
+.pv-pastilla--aviso span {
+    background: var(--pv-atencion);
+    border-color: var(--pv-atencion);
+    color: #fff;
+}
+
+.pv-pastilla--actual span {
+    border-color: var(--pv-acento);
+    box-shadow: 0 0 0 3px var(--pv-acento-suave);
+}
+
+.pv-error {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--pv-peligro);
+    color: var(--pv-peligro);
+    font-size: 13px;
+}
+
+/* --------------------------------------------------------------------------
+ * 11. Rótulos sobre el vídeo (IU-5)
+ * ----------------------------------------------------------------------- */
+
+.pv-video {
+    position: relative !important;
+    gap: 0 !important;
+}
+
+/* La capa no intercepta el ratón: el vídeo sigue siendo del usuario. */
+.pv-video__capa {
+    position: absolute !important;
+    inset: 0 !important;
+    pointer-events: none;
+    z-index: 3;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+}
+
+.pv-overlay {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 16px;
+}
+
+.pv-badge {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: rgba(10, 14, 20, .72);
+    color: #E6EDF3;
+    font-size: 12px;
+    font-weight: 600;
+    backdrop-filter: blur(4px);
+}
+
+.pv-badge--aviso {
+    background: rgba(180, 83, 9, .85);
+    color: #fff;
+}
+
+.pv-badge--midiendo {
+    background: rgba(10, 14, 20, .55);
+    font-weight: 500;
+}
+
+.pv-rep {
+    position: absolute;
+    top: 52px;
+    left: 14px;
+    padding: 10px 14px;
+    border-radius: 13px;
+    background: rgba(10, 14, 20, .72);
+    color: #fff;
+    backdrop-filter: blur(4px);
+}
+
+.pv-rep strong {
+    font-size: 19px;
+    letter-spacing: .02em;
+}
+
+.pv-rep__marcas {
+    display: flex;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.pv-rep__marcas i {
+    width: 22px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .28);
+}
+
+.pv-rep__marcas i.llena {
+    background: var(--pv-acento);
+}
+
+.pv-toast {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-radius: 13px;
+    background: rgba(10, 14, 20, .78);
+    color: #fff;
+    font-size: 14px;
+    backdrop-filter: blur(4px);
+}
+
+.pv-toast span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 50%;
+    background: var(--pv-acento);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.pv-toast--aviso span {
+    background: var(--pv-atencion);
+}
+
+.pv-pantalla {
+    position: absolute !important;
+    top: 14px;
+    right: 14px;
+    z-index: 4;
+    background: rgba(10, 14, 20, .72) !important;
+    border-color: transparent !important;
+    color: #E6EDF3 !important;
+}
+
+/* La cámara es la fuente, no el protagonista: el análisis se mira arriba. */
+.pv-camara video,
+.pv-camara img {
+    max-height: 150px !important;
+    object-fit: contain;
+}
+
+/* --------------------------------------------------------------------------
+ * 12. Vistas secundarias (IU-6)
+ * ----------------------------------------------------------------------- */
+
+.pv-fichas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+}
+
+.pv-ficha {
+    padding: 16px 18px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 14px;
+    background: var(--pv-superficie);
+}
+
+.pv-ficha header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.pv-ficha h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--pv-texto);
+}
+
+.pv-ficha code,
+.pv-ajustes code {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--pv-superficie-2);
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+}
+
+.pv-ficha__datos {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.pv-ficha__datos span {
+    display: block;
+    color: var(--pv-texto-tenue);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+
+.pv-ficha__datos strong {
+    color: var(--pv-texto);
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+}
+
+.pv-ficha__clases {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.pv-ficha__clases li {
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: var(--pv-superficie-2);
+}
+
+.pv-ficha__clases strong {
+    display: block;
+    color: var(--pv-texto);
+    font-size: 13px;
+}
+
+.pv-ficha__clases span {
+    color: var(--pv-texto-tenue);
+    font-size: 12px;
+}
+
+.pv-ficha__fuente {
+    margin: 0;
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.pv-ajustes {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+.pv-ajustes th {
+    text-align: left;
+    padding: 8px 10px;
+    color: var(--pv-texto-tenue);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    border-bottom: 1px solid var(--pv-borde);
+}
+
+.pv-ajustes td {
+    padding: 10px;
+    border-bottom: 1px solid var(--pv-borde);
+    color: var(--pv-texto-tenue);
+}
+
+.pv-ajustes td strong {
+    color: var(--pv-texto);
+    font-weight: 600;
+}
+
+.pv-ajuste--ok td:first-child {
+    box-shadow: inset 3px 0 0 0 var(--pv-acento);
+}
+
+.pv-ajuste--aviso td:first-child {
+    box-shadow: inset 3px 0 0 0 var(--pv-atencion);
+}
+
+.pv-ajuste--aviso td strong {
+    color: var(--pv-atencion);
+}
+
+.pv-vacio {
+    padding: 22px;
+    border: 1px dashed var(--pv-borde);
+    border-radius: 13px;
+    color: var(--pv-texto-tenue);
+    text-align: center;
+}
+
+.pv-resumen {
+    color: var(--pv-texto-tenue);
+    font-size: 13px;
+    padding: 2px 2px 8px;
+}
+
+/* --------------------------------------------------------------------------
+ * 13. Accesibilidad y pantallas estrechas (IU-7)
+ * ----------------------------------------------------------------------- */
+
+/* El foco tiene que verse: con la tira plegada, los botones son solo iconos y
+ * sin anillo de foco no hay forma de saber dónde estás con el teclado. */
+.pv-nav:focus-visible,
+.pv-icono:focus-visible,
+.pv-btn-ico:focus-visible,
+button:focus-visible {
+    outline: 2px solid var(--pv-acento) !important;
+    outline-offset: 2px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pv-rail,
+    .pv-tile__barra span {
+        transition: none !important;
+    }
+}
+
+/* Por debajo de 1280 px el panel de métricas baja bajo el vídeo en vez de
+ * competir con él por el ancho. */
+@media (max-width: 1280px) {
+    .pv-body > .pv-main .pv-tabs .tabitem > div > .form,
+    .pv-main .pv-tabs > div > div > .row {
+        flex-wrap: wrap !important;
+    }
+    .pv-panel,
+    .pv-video {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+    .pv-tiles {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .pv-header {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+    }
+    .pv-tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .pv-sesion {
+        gap: 14px;
+    }
+    .pv-rep {
+        top: 46px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 14. Ajustes pedidos tras la primera revisión
+ * ----------------------------------------------------------------------- */
+
+/* La marca ocupa su propia sección, alineada con la tira lateral y con el
+ * mismo pliegue: el logotipo queda siempre sobre la barra. */
+.pv-header__marca {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 22px 0 0 !important;
+    border-right: 1px solid var(--pv-borde);
+}
+
+/* La marca NO se pliega: el nombre y el logotipo son fijos, se mire como se
+ * mire la barra lateral. */
+
+/* La cámara fuente no se enseña: el paciente mira el seguimiento. No se usa
+ * `display: none` a propósito — el elemento tiene que seguir reproduciendo para
+ * que Gradio pueda leer sus frames. */
+.pv-camara {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Salvavidas: si el arranque automático falla, el componente vuelve a la vista
+ * con sus controles para poder darle permiso a mano. */
+.pv-camara--visible {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    opacity: 1;
+    pointer-events: auto;
+    margin-top: 10px !important;
+}
+
+.pv-camara--visible video,
+.pv-camara--visible img {
+    max-height: 190px !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 15. El ancho que libera la barra va al vídeo
+ * ----------------------------------------------------------------------- */
+
+/* El contenido absorbe lo que la tira deja libre... */
+.pv-body > .pv-main {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+
+.pv-escena {
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+}
+
+/* ...y dentro, el panel de métricas conserva su ancho mientras el vídeo se
+ * queda con todo el resto. Si los dos crecieran en proporción 3:2, plegar la
+ * barra ensancharía también las tarjetas, que no lo necesitan. */
+.pv-panel {
+    flex: 0 0 clamp(320px, 34%, 440px) !important;
+    min-width: 0 !important;
+}
+
+.pv-columna-video {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+.pv-video__lienzo,
+.pv-video__lienzo img {
+    width: 100% !important;
+}
+
+/* El cambio se ve como un movimiento, no como un salto. */
+.pv-main,
+.pv-columna-video {
+    transition: width .16s ease, flex-basis .16s ease;
+}
+
+/* En estrecho manda la regla de IU-7: el panel baja bajo el vídeo. */
+@media (max-width: 1280px) {
+    .pv-escena {
+        flex-wrap: wrap !important;
+    }
+    .pv-panel,
+    .pv-columna-video {
+        flex: 1 1 100% !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 16. Plegar esconde la barra entera
+ *
+ * La barra se oculta con `display: none`, sin dejar tira de iconos ni restos.
+ * Para que eso sea posible el botón de plegar **no vive dentro de ella**: está
+ * anclado a la ventana, así que da igual que su contenedor desaparezca. Es lo
+ * que evita el caso peor — esconder la barra y quedarse sin forma de abrirla.
+ * ----------------------------------------------------------------------- */
+
+body.pv-plegada .pv-rail {
+    display: none !important;
+}
+
+.pv-plegar {
+    position: fixed !important;
+    bottom: 18px;
+    /* Desplegada, queda en la esquina inferior derecha de la barra. */
+    left: 178px;
+    z-index: 40;
+    margin: 0 !important;
+    background: var(--pv-superficie) !important;
+    border: 1px solid var(--pv-borde) !important;
+    box-shadow: var(--pv-sombra);
+    transition: left .16s ease;
+}
+
+/* Escondida, se retira al borde de la ventana. */
+body.pv-plegada .pv-plegar {
+    left: 14px;
+}
+
+.pv-plegar::before {
+    transition: transform .16s ease;
+}
+
+/* Con la barra ya escondida, la doble flecha apunta a la vuelta. */
+body.pv-plegada .pv-plegar::before {
+    transform: rotate(180deg);
+}
+
+/* Hueco al pie de la barra para que su contenido no quede bajo el botón. */
+.pv-rail {
+    padding-bottom: 72px !important;
+}
+
+body.pv-plegada .pv-header__marca {
+    border-right-color: transparent;
+}
+
+/* La posición del botón en estrecho la fija la sección 8, junto con el cajón. */
+
+/* --------------------------------------------------------------------------
+ * 17. Quién ha entrado
+ * ----------------------------------------------------------------------- */
+
+.pv-usuario {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--pv-borde);
+    border-radius: 12px;
+    background: var(--pv-superficie-2);
+}
+
+.pv-usuario__ini {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 50%;
+    background: var(--pv-acento);
+    color: #fff;
+    font-weight: 700;
+}
+
+.pv-usuario strong {
+    display: block;
+    color: var(--pv-texto);
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.pv-usuario em {
+    color: var(--pv-texto-tenue);
+    font-size: 11.5px;
+    font-style: normal;
+}
+
+/* Sin autenticación se dice, y se dice en ámbar: una app abierta no puede
+ * parecerse a una cerrada. */
+.pv-usuario--abierto {
+    border-color: var(--pv-atencion);
+    background: var(--pv-atencion-suave);
+}
+
+.pv-usuario--abierto .pv-usuario__ini {
+    background: var(--pv-atencion);
+}
+
+/* --------------------------------------------------------------------------
+ * 18. Teléfonos
+ *
+ * Por debajo de 720 px la cabecera deja de ser una fila. Los cuatro controles
+ * de inicio no caben en un móvil y, sin envolver, el botón de «Iniciar sesión»
+ * se salía de la pantalla: medido a 390 px, su borde derecho quedaba en 534.
+ * Es decir, la acción principal de la app era inalcanzable en un teléfono.
+ *
+ * El otro criterio de esta sección es el dedo: nada pulsable baja de 44 px y
+ * ningún campo baja de 16 px de letra, porque Safari en iOS hace zoom al
+ * enfocar un campo más pequeño y deja la página descuadrada al volver.
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+
+    /* -- cabecera ------------------------------------------------------- */
+
+    .pv-header {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        padding: 10px 14px !important;
+    }
+
+    /* Sin la tira lateral debajo, la marca ya no tiene con qué alinearse ni
+     * de qué separarse. */
+    .pv-header__marca {
+        padding: 0 !important;
+        border-right: 0 !important;
+    }
+
+    .pv-marca {
+        gap: 10px;
+    }
+
+    .pv-marca__nombre {
+        font-size: 21px;
+    }
+
+    /* El `flex-basis` de la sección 2 también hay que bajarlo: en un
+     * contenedor flex manda él, no `width`. */
+    .pv-marca .pv-marca__logo,
+    .pv-marca span.pv-marca__logo {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+    }
+
+    /* Los controles pasan a columna y ocupan el ancho entero: repartidos en
+     * fila, a 390 px el campo de paciente se quedaba en 132 px y recortaba
+     * hasta su propio texto de ayuda. */
+    .pv-header__zona {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    .pv-header__zona > * {
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    /* Gradio agrupa los campos contiguos en un `.form` propio, así que no
+     * basta con estirar los hijos directos de la fila: los tres controles
+     * viven un nivel más abajo y ahí es donde se reparten el ancho. */
+    .pv-header__zona .form {
+        flex-wrap: wrap !important;
+        width: 100% !important;
+    }
+
+    .pv-header__zona .form > * {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Iniciar es la acción principal de la pantalla de arranque: ancho
+     * completo y alto de dedo. */
+    .pv-header__zona .pv-ico--iniciar,
+    .pv-header__zona .pv-ico--iniciar button {
+        width: 100% !important;
+        min-height: 46px !important;
+    }
+
+    /* -- cabecera con la sesión en marcha -------------------------------- */
+
+    /* Mientras se ejercita, la pantalla es del vídeo. Estirar aquí los cuatro
+     * elementos a lo ancho dejaba una cabecera de 415 px en un teléfono de
+     * 667: el vídeo empezaba fuera de la pantalla, que es tanto como no
+     * tenerlo. Así que quién y qué comparten línea con el cronómetro, y las
+     * dos acciones comparten la siguiente.
+     *
+     * `:has(.pv-sesion)` distingue el estado de forma fiable: Gradio no monta
+     * la fila de sesión en el DOM hasta que la sesión arranca (comprobado en
+     * el navegador, no supuesto). Si el navegador no soporta `:has`, la regla
+     * se ignora y solo se pierde compacidad. */
+    .pv-header:has(.pv-sesion) .pv-header__marca {
+        display: none !important;
+    }
+
+    .pv-header__zona > *:has(.pv-sesion) {
+        flex: 1 1 58% !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+
+    .pv-header__zona > *:has(.pv-reloj) {
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
+        width: auto !important;
+    }
+
+    .pv-header__zona .pv-ico--terminar,
+    .pv-header__zona .pv-ico--terminar button {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        width: auto !important;
+        min-height: 46px !important;
+    }
+
+    /* Los botones de icono son la excepción a la regla de arriba: siguen
+     * siendo cuadrados, solo que más grandes para el dedo. */
+    .pv-header__zona .pv-icono,
+    .pv-header__zona .pv-icono button {
+        flex: 0 0 44px !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+    }
+
+    /* Los dos datos comparten línea y se recortan con puntos suspensivos, que
+     * ya es el comportamiento de `.pv-sesion__dato strong`. */
+    .pv-sesion {
+        flex-wrap: nowrap;
+        gap: 14px;
+    }
+
+    .pv-sesion__dato {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .pv-reloj {
+        justify-content: flex-start;
+    }
+
+    /* -- cuerpo --------------------------------------------------------- */
+
+    /* La cabecera envuelta es más alta, así que un mínimo calculado sobre una
+     * cabecera de una sola fila solo añade hueco muerto al final. */
+    .pv-body {
+        min-height: 0 !important;
+    }
+
+    .pv-main {
+        padding: 12px !important;
+        gap: 12px !important;
+    }
+
+    /* -- rótulos sobre el vídeo ----------------------------------------- */
+
+    /* El vídeo pasa de ~800 px a ~360: los rótulos se escalan con él o tapan
+     * al paciente, que es justo lo que hay que mirar. */
+    .pv-overlay {
+        padding: 10px;
+    }
+
+    .pv-badge {
+        top: 10px;
+        left: 10px;
+        padding: 4px 9px;
+        font-size: 11px;
+    }
+
+    .pv-rep {
+        top: 42px;
+        left: 10px;
+        padding: 8px 11px;
+    }
+
+    .pv-rep strong {
+        font-size: 16px;
+    }
+
+    .pv-rep__marcas i {
+        width: 16px;
+    }
+
+    .pv-toast {
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        padding: 9px 11px;
+        font-size: 12.5px;
+    }
+
+    .pv-pantalla {
+        top: 10px;
+        right: 10px;
+    }
+
+    .pv-camara--visible video,
+    .pv-camara--visible img {
+        max-height: 130px !important;
+    }
+
+    /* -- panel de métricas ---------------------------------------------- */
+
+    .pv-tiles {
+        gap: 8px;
+    }
+
+    .pv-tile {
+        padding: 10px 11px 12px;
+    }
+
+    .pv-tile__valor {
+        font-size: 25px;
+    }
+
+    .pv-tile__unidad {
+        font-size: 13px;
+    }
+
+    /* -- vistas secundarias --------------------------------------------- */
+
+    /* `auto-fill` con un mínimo de 320 px deja de tener sentido cuando el
+     * contenedor mide menos que el mínimo. */
+    .pv-fichas {
+        grid-template-columns: 1fr;
+    }
+
+    .pv-ficha {
+        padding: 14px;
+    }
+
+    /* Si una tabla no cabe, se desplaza ella: la página no. */
+    .pv-main .table-wrap,
+    .pv-main .svelte-virtual-table-viewport,
+    .pv-ajustes,
+    .pv-tabla {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* En el cajón el espacio vertical es el de la pantalla, y el lema es lo
+     * único que no lleva a ninguna parte: fuera, para que quepan hasta el
+     * descargo y el botón de salir sin tener que desplazar. */
+    .pv-lema {
+        display: none;
+    }
+
+    /* El botón del cajón esquiva la barra de gestos del teléfono. */
+    .pv-plegar {
+        bottom: calc(16px + env(safe-area-inset-bottom));
+    }
+
+    .pv-footer {
+        flex-wrap: wrap !important;
+        gap: 4px 14px !important;
+        padding: 10px 14px calc(10px + env(safe-area-inset-bottom)) !important;
+        font-size: 11.5px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 19. Pantallas táctiles
+ *
+ * Estas reglas no van por ancho sino por **dispositivo de entrada**: un iPad
+ * en horizontal mide 1024 px y sigue manejándose con el dedo, así que atarlas
+ * al ancho las dejaba fuera justo donde también hacen falta.
+ * ----------------------------------------------------------------------- */
+
+@media (pointer: coarse) {
+
+    /* Safari en iOS hace zoom al enfocar cualquier campo con letra menor de
+     * 16 px, y al salir deja la página desplazada y a otra escala.
+     *
+     * Ojo con el selector: Gradio reescribe esta hoja anteponiendo
+     * `.gradio-container… .contain` a cada regla, así que nombrar aquí
+     * `.gradio-container` produce un selector que no existe —quedaría dentro
+     * de sí mismo— y la regla no llegaría a aplicarse nunca. Se ancla en
+     * nuestras propias zonas. */
+    .pv-header input,
+    .pv-header textarea,
+    .pv-header select,
+    .pv-main input,
+    .pv-main textarea,
+    .pv-main select {
+        font-size: 16px !important;
+    }
+
+    /* Nada pulsable por debajo del dedo. */
+    .pv-nav,
+    .pv-nav button {
+        min-height: 44px !important;
+    }
+
+    .pv-plegar,
+    .pv-plegar button {
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        flex: 0 0 44px !important;
+    }
+
+    .pv-pantalla,
+    .pv-pantalla button {
+        width: 40px !important;
+        min-width: 40px !important;
+        height: 40px !important;
+        flex: 0 0 40px !important;
+    }
+
+    /* Pausa y tema: los botones cuadrados de la sección 5 crecen para el dedo
+     * en cualquier pantalla táctil, no solo en las estrechas. */
+    .pv-icono,
+    .pv-icono button {
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        flex: 0 0 44px !important;
+    }
+
+    /* Los iconos que Gradio pinta sobre el vídeo (pantalla completa, descarga,
+     * compartir) miden 18 px: no son nuestros, pero el dedo es el mismo. */
+    .pv-video .icon-button {
+        min-width: 34px;
+        min-height: 34px;
+        padding: 8px !important;
+    }
+
+    /* Cabecera del desplegable de repeticiones. */
+    .pv-main .label-wrap {
+        min-height: 44px;
+    }
+
+    /* Los estados de ratón no tienen sentido sin ratón: en táctil se quedan
+     * pegados después de tocar, y la entrada activa deja de distinguirse. */
+    .pv-nav:hover,
+    .pv-nav button:hover {
+        background: transparent !important;
+        color: var(--pv-texto-tenue) !important;
+    }
+
+    .pv-nav--activo:hover,
+    .pv-nav--activo button:hover {
+        background: var(--pv-acento-suave) !important;
+        color: var(--pv-acento) !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 20. La barra lateral, como cajón, en pantallas estrechas
+ *
+ * Por debajo de 1100 px no hay ancho que repartir entre barra y contenido, así
+ * que la barra se superpone en vez de ocupar columna. Arranca cerrada —lo fija
+ * `JS_INICIO`— y se abre y se cierra con el mismo botón de siempre.
+ *
+ * Antes esto era un `display: none` a secas y dejaba la app **sin navegación
+ * en móvil**: la tira lateral es el único menú (la barra de pestañas de Gradio
+ * está oculta desde la sección 1), y plegar no podía devolverla porque aquella
+ * regla ganaba siempre. Medido a 390 px: 0 de 8 entradas alcanzables, incluida
+ * la de salir.
+ *
+ * Va al final del archivo a propósito: `body.pv-plegada .pv-rail` de la
+ * sección 16 tiene la misma especificidad, así que quien decide es el orden.
+ * ----------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+    .pv-rail {
+        position: fixed !important;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 60;
+        width: min(272px, 82vw) !important;
+        flex: 0 0 auto !important;
+        overflow-y: auto;
+        box-shadow: var(--pv-sombra);
+        transform: translateX(0);
+        transition: transform .18s ease;
+    }
+
+    /* Cerrada = fuera de la ventana, no `display: none`: así el movimiento se
+     * ve y el botón puede traerla de vuelta. */
+    body.pv-plegada .pv-rail {
+        display: flex !important;
+        transform: translateX(-101%);
+        box-shadow: none;
+    }
+
+    /* El botón se queda por encima del cajón: con el cajón abierto, es lo que
+     * hay que pulsar para cerrarlo. Sin esto no habría forma de salir. */
+    .pv-plegar,
+    body.pv-plegada .pv-plegar {
+        left: 14px;
+        z-index: 70 !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * 21. El nombre del paciente, cuando no se escribe
+ *
+ * Con perfil de paciente la cabecera no pide el nombre: lo enseña. El rótulo
+ * ocupa el sitio del cuadro de texto y se alinea con los desplegables que
+ * tiene al lado, que sí son campos.
+ * ----------------------------------------------------------------------- */
+
+.pv-paciente-fijo {
+    display: flex !important;
+    align-items: center;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    min-width: 0 !important;
+}
+
+/* Hereda la forma de `.pv-sesion__dato` (sección 9), que es como se enseña el
+ * mismo dato una vez la sesión está en marcha: el paciente ve su nombre igual
+ * antes y durante, y no parece que la interfaz haya cambiado de sitio. */
+.pv-sesion__dato--fijo {
+    padding: 2px 0;
 }

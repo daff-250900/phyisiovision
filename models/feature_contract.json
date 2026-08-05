@@ -1,0 +1,109 @@
+{
+  "version": "1.0.0",
+  "creado": "2026-08-01T02:24:17+00:00",
+  "ejercicio": "Ex1",
+  "descripcion": "Clasificador de calidad de ejecucion por repeticion, ejercicio Ex1.",
+  "feature_names": [
+    "rom_max",
+    "rom_min",
+    "rom_range",
+    "rom_p95",
+    "codo_medio",
+    "codo_min",
+    "codo_std",
+    "tronco_max",
+    "tronco_medio",
+    "lean_max",
+    "lean_rango",
+    "elevacion_escapular_max",
+    "elevacion_escapular_rango",
+    "contralateral_max",
+    "contralateral_medio",
+    "duracion_s",
+    "ratio_con_exc",
+    "vel_pico",
+    "vel_media",
+    "suavidad_ldlj",
+    "tiempo_en_pico",
+    "variabilidad_ang",
+    "visibilidad_media",
+    "frac_valida",
+    "largo_torso",
+    "es_lateral"
+  ],
+  "n_features": 26,
+  "labels": {
+    "0": "rango_insuficiente",
+    "1": "correcto",
+    "2": "compensacion_tronco"
+  },
+  "imputacion_medianas": {
+    "rom_max": 105.36809836194242,
+    "rom_min": 9.930732782852868,
+    "rom_range": 93.44061833943053,
+    "rom_p95": 100.81381109925982,
+    "codo_medio": 150.71899530414325,
+    "codo_min": 134.38170672841443,
+    "codo_std": 7.11419475296592,
+    "tronco_max": 9.263529444112116,
+    "tronco_medio": 6.238714071371394,
+    "lean_max": -1.2336722200832209,
+    "lean_rango": 2.8178076848441673,
+    "elevacion_escapular_max": -0.5031059222923504,
+    "elevacion_escapular_rango": 0.1931813100510896,
+    "contralateral_max": 32.38691388421945,
+    "contralateral_medio": 26.779995660700678,
+    "duracion_s": 5.3,
+    "ratio_con_exc": 1.1971830985915493,
+    "vel_pico": 118.97220424081416,
+    "vel_media": 32.821227918165334,
+    "suavidad_ldlj": -13.393086036046952,
+    "tiempo_en_pico": 0.15817940981676354,
+    "variabilidad_ang": 31.603884431005632,
+    "visibilidad_media": 0.9464335970345346,
+    "frac_valida": 1.0,
+    "largo_torso": 0.4973207429740235,
+    "es_lateral": 0.5
+  },
+  "entrenamiento": {
+    "n_repeticiones": 334,
+    "n_sujetos": 13,
+    "n_gestos": 167,
+    "etiquetado": "manual_revisado",
+    "gestos_revisados": 167,
+    "acuerdo_reglas_vs_final": 1.0,
+    "distribucion_clases": {
+      "correcto": 186,
+      "compensacion_tronco": 134,
+      "rango_insuficiente": 14
+    }
+  },
+  "hiperparametros": {
+    "max_depth": 2,
+    "learning_rate": 0.2249092168046502,
+    "n_estimators": 350,
+    "min_child_weight": 5,
+    "subsample": 0.6537467653252246,
+    "colsample_bytree": 0.6826892315995667,
+    "gamma": 0.3358333442388345,
+    "reg_alpha": 0.006425636455633985,
+    "reg_lambda": 0.001176725389317158
+  },
+  "metricas_loso": {
+    "macro_f1": 0.8685,
+    "balanced_acc": 0.8334,
+    "accuracy": 0.8862,
+    "mcc": 0.7829
+  },
+  "ic95_macro_f1": [
+    0.7912,
+    0.9234
+  ],
+  "baseline_reglas_macro_f1": 0.6289,
+  "preprocesamiento": {
+    "fuente_coordenadas": "mediapipe pose_world_landmarks (metros, centrado en cadera)",
+    "modelo_mediapipe": "pose_landmarker_heavy.task",
+    "unidad_de_prediccion": "una repeticion segmentada, no el video completo",
+    "lado_activo": "detectado por sujeto segun el mayor recorrido angular"
+  }
+}

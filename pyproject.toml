@@ -1,0 +1,22 @@
+[project]
+name = "physiovision"
+version = "0.1.0"
+description = "Análisis de ejercicios de rehabilitación a partir de video con MediaPipe Pose y XGBoost"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+# Sin esto, `import src.x` falla al ejecutar pytest desde un subdirectorio.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # la longitud la controla el formateador
+
+[tool.ruff.lint.per-file-ignores]
+"entrenamiento/*" = ["E402"]  # los notebooks importan por secciones

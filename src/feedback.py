@@ -14,12 +14,17 @@ class FeedbackService:
         exercise_id: str,
         prediction: dict[str, Any],
         features: dict[str, float],
+        indice: int = 0,
     ) -> dict[str, Any]:
         label = str(prediction["label"])
         knowledge = self.knowledge_base.retrieve(exercise_id, label)
         return {
             "status": label,
             "title": knowledge.get("titulo", "Resultado"),
+            # Consigna corta: es lo que se muestra tras cada repetición. El
+            # texto largo queda para el resumen de la serie, que sí se lee con
+            # calma.
+            "cue": self.knowledge_base.consigna(exercise_id, label, indice),
             "message": knowledge["recomendacion"],
             "safety_warning": knowledge["precaucion"],
             "metrics": features,

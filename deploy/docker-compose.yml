@@ -1,0 +1,78 @@
+# Despliegue de PhysioVision: la aplicación detrás de un proxy con TLS.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Cuatro cosas que resuelve este archivo y que no se pueden dejar para después:
+#
+#   TLS         sin contexto seguro no hay cámara: `getUserMedia` solo funciona
+#               en `localhost` o en `https`. Por eso la app no publica su puerto
+#               y solo se llega a ella por el proxy.
+#   Usuarios    llegan por `PHYSIOVISION_USUARIOS`, del archivo de entorno. En
+#               `docker inspect` se ve el resumen derivado, nunca la contraseña.
+#   Secretos    la cuenta de servicio de Cloud TTS se monta como archivo de solo
+#               lectura; no hay forma de pasarla por variable.
+#   Persistencia el volumen guarda la base de pacientes y la caché de audio. Sin
+#               él, cada reinicio empieza de cero.
+
+name: physiovision
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      # mediapipe 0.10.35 solo publica rueda de Linux para x86_64.
+      platforms: [linux/amd64]
+    image: physiovision:${PHYSIOVISION_TAG:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    # `.env` y no otro nombre: compose lee ese archivo para dos cosas a la vez,
+    # las variables del contenedor y la interpolación de este mismo YAML
+    # (dominio y puertos). Con cualquier otro nombre, lo segundo no ocurre.
+    env_file:
+      - .env
+    environment:
+      # Dentro del contenedor escucha en todas las interfaces; quien limita el
+      # acceso es la red de compose (no publica puertos) y el login de la app.
+      PHYSIOVISION_HOST: 0.0.0.0
+      # Ruta de la cuenta de servicio, tal como queda montada más abajo. Si el
+      # archivo no existe, la app arranca igual y se queda sin voz.
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secretos/google.json
+    volumes:
+      - datos:/app/data
+      # Se monta la carpeta, no el archivo: si se monta `google.json` y no
+      # existe, Docker crea un **directorio** con ese nombre y la ruta de
+      # credenciales apunta a una carpeta. Montando la carpeta, la ausencia del
+      # archivo es simplemente ausencia, y la app se queda sin voz como está
+      # previsto.
+      - ./secretos:/run/secretos:ro
+    # El healthcheck viene en la imagen; aquí solo se le da margen de arranque.
+    healthcheck:
+      start_period: 90s
+    # Una sesión ocupa ~0,7 GB y satura un núcleo. Cuatro es el límite que ya
+    # trae configurado la propia aplicación.
+    mem_limit: 4g
+    cpus: 4.0
+    expose:
+      - "7860"
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "${PUERTO_HTTP:-80}:80"
+      - "${PUERTO_HTTPS:-443}:443"
+    environment:
+      # El dominio decide cómo se emite el certificado. Ver deploy/Caddyfile.
+      DOMINIO: ${DOMINIO:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_datos:/data          # certificados: sobrevive a los reinicios
+      - caddy_config:/config
+
+volumes:
+  datos:
+  caddy_datos:
+  caddy_config:
