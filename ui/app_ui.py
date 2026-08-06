@@ -17,6 +17,7 @@ el enrutado sigue siendo el de Gradio y las vistas son componentes normales.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import gradio as gr
@@ -53,7 +54,40 @@ CSS_PATH = Path(__file__).resolve().parent / "styles.css"
 #:
 #: A 10 Hz una repetición de cuatro ya cambia de clase. `rom_max` en cambio
 #: aguanta (138.4 -> 137.7), así que la deriva viene de las variables temporales.
+#:
+#: El intervalo es un techo, no una promesa: Gradio no captura mientras haya un
+#: frame en vuelo, así que la tasa real la marca el viaje de ida y vuelta. Por
+#: eso lo que de verdad decide los Hz es cuánto pesa el frame (ver RESOLUCION).
 INTERVALO_STREAM = 1.0 / 30
+
+#: Resolución que se le pide a la cámara del navegador.
+#:
+#: Esto no es una preferencia estética: es lo que fija la tasa real de frames.
+#: Gradio envía cada frame como `canvas.toDataURL("image/jpeg")` **al tamaño
+#: nativo del vídeo** y en base64, y no captura el siguiente hasta que vuelve el
+#: anterior. Con una cámara de 1280x720 el frame pesa unos 160 KB en base64;
+#: sobre una subida doméstica de ~1 MB/s eso son 156 ms por frame, y la app se
+#: queda en 4-6 fps por mucho que `INTERVALO_STREAM` pida 30. En producción se
+#: midió exactamente eso: «tasa de camara 4.0 fps (entrenado a 30)», con la CPU
+#: del contenedor al 1,5 %. El cuello de botella era la red, no el modelo.
+#:
+#: Medido sobre un frame real del dataset (PM_109), jpeg calidad 92:
+#:
+#:     1280x720 -> 159 KB base64 -> 156 ms -> ~6 fps
+#:      960x540 -> 104 KB base64 -> 102 ms -> ~10 fps
+#:      640x480 ->  76 KB base64 ->  74 ms -> ~13 fps   <- este
+#:      480x360 ->  49 KB base64 ->  48 ms -> ~21 fps
+#:
+#: 640x480 es el punto medio: MediaPipe recorta y reescala a 256x256 para la
+#: pose, así que bajar de ahí no mejora la detección, solo la tasa, y el panel
+#: de seguimiento ya se ve blando. Se deja regulable por si la conexión del sitio
+#: manda otra cosa.
+RESOLUCION_CAMARA = {
+    "video": {
+        "width": {"ideal": int(os.environ.get("PHYSIOVISION_CAMARA_ANCHO", "640"))},
+        "height": {"ideal": int(os.environ.get("PHYSIOVISION_CAMARA_ALTO", "480"))},
+    }
+}
 
 #: Entradas de la tira lateral: (id de pestaña, etiqueta). El id elige además el
 #: icono, que `ui/iconos.py` publica como `.pv-ico--<id>`.
@@ -265,23 +299,106 @@ MARCA = f"""
 </div>
 """
 
-#: Portada de la pantalla de acceso. Gradio la sirve con su propia plantilla y
-#: **sin nuestra hoja de estilos**, así que aquí los estilos van en línea o no
-#: se aplican. El verde es el mismo en los dos temas: la pantalla de acceso
-#: hereda el claro u oscuro del navegador y un tono por modo obligaría a
-#: duplicar el mensaje.
-MENSAJE_ACCESO = f"""
-<div style="text-align:center;line-height:1.5">
-  <img src="{_LOGO}" alt="" width="84" height="84"
-       style="border-radius:19px;margin-bottom:12px">
-  <div style="font-size:21px;font-weight:700;letter-spacing:-.01em">
+#: Estilos de la pantalla de acceso. Gradio la sirve con su propia plantilla y
+#: **sin nuestra hoja de estilos**: `auth_message` es el único hueco que deja.
+#: Se inserta con `innerHTML`, y un `<style>` insertado así sí se aplica —un
+#: `<script>` no llegaría a ejecutarse—, de modo que desde aquí se puede vestir
+#: toda la página. Por eso los selectores son los de Gradio y no clases nuestras;
+#: si una versión futura renombra `.form` o `.block`, lo que se pierde es el
+#: acabado, no el acceso.
+#:
+#: Los colores salen de las variables del tema, que ya distinguen claro y
+#: oscuro. El verde es el único literal: es el de la marca y no cambia por modo.
+_ESTILO_ACCESO = """
+<style>
+/* «Login» sobra: la marca completa va justo debajo, con logotipo y descripción. */
+.wrap h2 { display: none !important; }
+.auth { margin: 0 0 20px !important; }
+
+/* El logotipo se centra con flex y no con `text-align` ni márgenes
+   automáticos: Gradio impone `display:block` a toda imagen desde una regla más
+   específica que cualquier clase nuestra, y sobre un bloque `text-align` no
+   hace nada. Centrar el contenedor es inmune a lo que valga `display`. */
+.pv-acceso { text-align: center; line-height: 1.5; }
+.pv-acceso__marca { display: flex; justify-content: center; margin-bottom: 12px; }
+.pv-acceso__logo { border-radius: 19px; }
+.pv-acceso__nombre { font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+.pv-acceso__lema { font-size: 13px; opacity: .7; margin-top: 2px; }
+.pv-acceso__aviso {
+  font-size: 12.5px; opacity: .75; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid rgba(127,127,127,.25);
+}
+
+/* Los dos campos venían envueltos en una sola caja con borde y sin marco
+   propio cada uno: se leían como dos etiquetas sueltas flotando en un
+   recuadro vacío. Se quita el marco del grupo y se le da a cada campo el suyo. */
+.form { border: 0 !important; background: transparent !important; gap: 14px !important; }
+.form > .block {
+  border: 0 !important; background: transparent !important; padding: 0 !important;
+}
+.form .container { gap: 6px !important; }
+
+span[data-testid="block-info"] {
+  font-size: 12px !important; font-weight: 600 !important;
+  letter-spacing: .02em; opacity: .8; margin-bottom: 5px !important;
+}
+
+/* El recuadro se dibuja sobre el contenedor y no sobre el `input`, porque el
+   de contraseña trae borde propio de Gradio y quedaban dos marcos, uno dentro
+   de otro. Así hay una sola caja por campo, y `:focus-within` la ilumina
+   cuando el cursor entra en el input que lleva dentro. */
+.form .input-container {
+  border: 1px solid rgba(127,127,127,.32) !important;
+  border-radius: 10px !important;
+  background: var(--input-background-fill);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.form .input-container:focus-within {
+  border-color: #16A34A !important;
+  box-shadow: 0 0 0 3px rgba(22,163,74,.18) !important;
+}
+/* El input queda desnudo —sin borde, fondo ni sombra propios— porque el marco
+   ya lo dibuja `.input-container`: dos cajas concéntricas era el aspecto que
+   se quería quitar. */
+input[type="text"], input[type="password"] {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 11px 13px !important;
+  font-size: 15px !important;
+  outline: none !important;
+}
+
+/* Rótulos y botón en español. Gradio los fija en inglés desde su propio
+   componente y no los expone en `launch()`, así que se sustituyen por CSS:
+   `:has()` distingue cada campo por el tipo de su input. Donde no esté
+   soportado se sigue leyendo el texto original, que es un inglés comprensible.
+   */
+label:has(input[type="text"]) span[data-testid="block-info"],
+label:has(input[type="password"]) span[data-testid="block-info"],
+button.primary { font-size: 0 !important; }
+label:has(input[type="text"]) span[data-testid="block-info"]::before {
+  content: "Cuenta"; font-size: 12px;
+}
+label:has(input[type="password"]) span[data-testid="block-info"]::before {
+  content: "Contraseña"; font-size: 12px;
+}
+button.primary { margin-top: 18px !important; }
+button.primary::after { content: "Entrar"; font-size: 15px; font-weight: 600; }
+</style>
+"""
+
+#: Portada de la pantalla de acceso.
+MENSAJE_ACCESO = _ESTILO_ACCESO + f"""
+<div class="pv-acceso">
+  <div class="pv-acceso__marca">
+    <img class="pv-acceso__logo" src="{_LOGO}" alt="" width="84" height="84">
+  </div>
+  <div class="pv-acceso__nombre">
     Physio<span style="color:#16A34A">Vision</span>
   </div>
-  <div style="font-size:13px;opacity:.7;margin-top:2px">
-    Asistente visual para rehabilitación
-  </div>
-  <div style="font-size:12.5px;opacity:.75;margin-top:14px;padding-top:12px;
-              border-top:1px solid rgba(127,127,127,.25)">
+  <div class="pv-acceso__lema">Asistente visual para rehabilitación</div>
+  <div class="pv-acceso__aviso">
     Acceso restringido: esta herramienta muestra datos de pacientes.<br>
     Tras varios intentos fallidos el acceso se bloquea temporalmente.
   </div>
@@ -429,7 +546,14 @@ def create_app(con_login: bool | None = None) -> gr.Blocks:
                                     # como "left" el brazo derecho del paciente,
                                     # y con el brazo elegido a mano eso haría
                                     # seguir al brazo equivocado.
-                                    webcam_options=gr.WebcamOptions(mirror=False),
+                                    #
+                                    # Y con resolución acotada: sin `constraints`
+                                    # el navegador abre la cámara a su tamaño
+                                    # nativo y cada frame viaja entero. Ver
+                                    # RESOLUCION_CAMARA.
+                                    webcam_options=gr.WebcamOptions(
+                                        mirror=False,
+                                        constraints=RESOLUCION_CAMARA),
                                 )
                             with gr.Column(scale=2, elem_classes="pv-panel"):
                                 estado = gr.HTML(paneles.estado_vacio())

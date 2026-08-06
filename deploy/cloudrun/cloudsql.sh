@@ -12,6 +12,12 @@ REGION="${2:-europe-southwest1}"
 INSTANCIA="${INSTANCIA:-physiovision-bd}"
 BASE="${BASE:-physiovision}"
 USUARIO="${USUARIO:-physiovision}"
+# La edicion va explicita porque su valor por defecto depende de la region: en
+# algunas (northamerica-south1, entre otras) es Enterprise Plus, que rechaza los
+# tiers compartidos y arranca en 2 vCPU y 16 GB. Dejarlo al default convierte
+# una base de unas pocas filas en el gasto mayor del despliegue.
+EDICION="${EDICION:-enterprise}"
+TIER="${TIER:-db-f1-micro}"
 
 gcloud config set project "$PROYECTO" >/dev/null
 gcloud services enable sqladmin.googleapis.com secretmanager.googleapis.com >/dev/null
@@ -24,7 +30,8 @@ else
     # aqui es tener la base encendida, no su capacidad.
     gcloud sql instances create "$INSTANCIA" \
         --database-version=POSTGRES_16 \
-        --tier=db-f1-micro \
+        --edition="$EDICION" \
+        --tier="$TIER" \
         --region="$REGION" \
         --storage-size=10GB \
         --storage-auto-increase \
