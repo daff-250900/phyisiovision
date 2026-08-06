@@ -205,6 +205,13 @@ class SesionEnVivo:
                 self.ejercicio)
         self._redactor = RedactorGemini()
         self._voz = SintetizadorVoz()
+        # Qué motor de voz tocó, en el registro. Sin esto, una sesión muda en
+        # producción no dice por qué lo está: el motivo solo se veía en letra
+        # pequeña en la interfaz, que es justo donde nadie mira cuando falla.
+        if self._voz.disponible:
+            logger.info("voz: motor %s", self._voz.motor_activo)
+        else:
+            logger.warning("voz no disponible: %s", self._voz.motivo_no_disponible)
         # Un solo hilo por sesion: las redacciones se encolan y no se pisan. Si
         # una repeticion llega antes de que termine la anterior, espera su turno
         # en vez de abrir conexiones en paralelo.

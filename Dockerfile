@@ -101,8 +101,23 @@ print('MediaPipe inicializa y procesa')"
 # uid 1000 y no otro: es el usuario con el que Hugging Face Spaces ejecuta los
 # contenedores y con el que monta su almacenamiento persistente. Fuera de HF da
 # igual, así que se usa el mismo en los dos sitios y no hay dos imágenes.
+# La caché de voz se hornea aquí. En Cloud Run el disco es efímero, así que sin
+# esto cada arranque en frío vuelve a sintetizar las consignas fijas, que son un
+# conjunto cerrado y siempre suenan igual. Y no es solo latencia: el nivel
+# gratuito de la API de Gemini admite 10 síntesis al día, con lo que la
+# alternativa no es «más lento», es «mudo» a media sesión.
+#
+# Se genera con `python deploy/cachear_voz.py`. Si no está, la imagen se
+# construye igual y las consignas se piden en vivo: es una mejora, no un
+# requisito, y un build en una máquina sin claves no debe fallar por esto.
 RUN useradd --create-home --uid 1000 physio \
     && mkdir -p /app/data/audio /app/data/uploads /app/data/processed \
+    && if [ -d knowledge_base/voz ]; then \
+           cp -r knowledge_base/voz/. /app/data/audio/; \
+           echo "caché de voz: $(ls /app/data/audio | wc -l) archivos"; \
+       else \
+           echo "caché de voz: no horneada"; \
+       fi \
     && chown -R physio:physio /app/data
 USER physio
 
